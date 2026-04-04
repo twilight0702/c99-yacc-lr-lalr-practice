@@ -5,7 +5,7 @@
 设计目标：
 1. 与 /src 完全解耦（只读 artifacts 文件）。
 2. 输出稳定版本化结构 visualizer/public/data/v1/<case_id>/。
-3. 兼容 step3~step8 当前产物。
+3. 兼容 step3~step9 当前产物。
 """
 
 from __future__ import annotations
@@ -143,6 +143,50 @@ def parse_notes(path: Path) -> List[str]:
         if line.startswith("- "):
             notes.append(line[2:])
     return notes
+
+
+def parse_reductions(path: Path) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    if not path.exists():
+        return result
+    # 形如：1. #99 declaration -> declaration_specifiers ';'
+    line_re = re.compile(r"^(\d+)\.\s+#(-?\d+)\s*(.*)$")
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = line_re.match(line)
+        if not m:
+            result.append({"index": len(result) + 1, "production_id": -1, "text": line})
+            continue
+        result.append(
+            {
+                "index": int(m.group(1)),
+                "production_id": int(m.group(2)),
+                "text": m.group(3).strip(),
+            }
+        )
+    return result
+
+
+def parse_error_kv(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return {}
+    if text == "no_error":
+        return {"status": "no_error"}
+    result: Dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        result[k.strip()] = v.strip()
+    if result:
+        result.setdefault("status", "error")
+    return result
 
 
 def parse_state_items(path: Path) -> Dict[str, List[str]]:
@@ -328,6 +372,41 @@ def normalize_conflict_resolutions(rows: List[Dict[str, str]]) -> List[Dict[str,
     return result
 
 
+def normalize_parse_input_tokens(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "index": int(row.get("index", "0")),
+                "symbol_id": int(row.get("symbol_id", "0")),
+                "symbol_name": row.get("symbol_name", ""),
+                "lexeme": row.get("lexeme", ""),
+                "line": int(row.get("line", "0")),
+                "column": int(row.get("column", "0")),
+            }
+        )
+    return result
+
+
+def normalize_parse_trace(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "step": int(row.get("step", "0")),
+                "state": int(row.get("state", "0")),
+                "lookahead_id": int(row.get("lookahead_id", "0")),
+                "lookahead": row.get("lookahead", ""),
+                "action": row.get("action", ""),
+                "production_id": int(row.get("production_id", "-1")),
+                "state_stack": row.get("state_stack", ""),
+                "symbol_stack": row.get("symbol_stack", ""),
+                "input_index": int(row.get("input_index", "0")),
+            }
+        )
+    return result
+
+
 def read_augmented_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -357,21 +436,28 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
     }
 
     raw_dir = step_dir / "raw"
-    symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
-    productions = parse_productions(raw_dir / "productions.txt")
-    if symbols:
-        payload["symbols"] = symbols
-    if productions:
-        payload["productions"] = productions
 
-    if step >= 4:
+    # 为防止 step8/step9 体积过大导致前端卡死，按步骤最小化装载字段。
+    # 各页面只读取本步骤核心字段，不再把前序步骤大对象累加进当前步骤。
+    if step in (3, 4):
+        symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
+        productions = parse_productions(raw_dir / "productions.txt")
+        if symbols:
+            payload["symbols"] = symbols
+        if productions:
+            payload["productions"] = productions
+
+    if step == 4:
         payload["augmented"] = {"production": read_augmented_text(raw_dir / "augmented_grammar.txt")}
         payload["prod_index_by_lhs"] = normalize_prod_index(parse_tsv(raw_dir / "prod_index_by_lhs.tsv"))
+        # Step4 页面需要 productions 来展示具体式子。
+        if "productions" not in payload:
+            payload["productions"] = parse_productions(raw_dir / "productions.txt")
 
-    if step >= 5:
+    if step == 5:
         payload["first_sets"] = normalize_first(parse_tsv(raw_dir / "first_sets.tsv"))
 
-    if step >= 6:
+    if step == 6:
         lr1_items = parse_lr1_items(raw_dir / "lr1_i0_items.txt")
         payload["lr1_i0"] = {
             "kernel_items": lr1_items["kernel"],
@@ -380,14 +466,14 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
             "goto_items": parse_goto_items(raw_dir / "lr1_i0_goto_items.txt"),
             "lookahead_notes": parse_notes(raw_dir / "lr1_lookahead_derivation.txt"),
         }
-    if step >= 7:
+    if step == 7:
         payload["lr1_canonical"] = {
             "states": normalize_lr1_states(parse_tsv(raw_dir / "lr1_states.tsv")),
             "state_items": parse_state_items(raw_dir / "lr1_state_items.txt"),
             "transitions": normalize_lr1_transitions(parse_tsv(raw_dir / "lr1_transitions.tsv")),
             "predecessors": normalize_predecessors(parse_tsv(raw_dir / "lr1_predecessors.tsv")),
         }
-    if step >= 8:
+    if step == 8:
         payload["parse_table"] = {
             "action_rows": normalize_action_table(parse_tsv(raw_dir / "action_table.tsv")),
             "goto_rows": normalize_goto_table(parse_tsv(raw_dir / "goto_table.tsv")),
@@ -395,6 +481,13 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
             "conflict_resolutions": normalize_conflict_resolutions(
                 parse_tsv(raw_dir / "parse_table_conflict_resolution.tsv")
             ),
+        }
+    if step == 9:
+        payload["parse_runtime"] = {
+            "input_tokens": normalize_parse_input_tokens(parse_tsv(raw_dir / "parse_input_tokens.tsv")),
+            "trace_rows": normalize_parse_trace(parse_tsv(raw_dir / "parse_trace.tsv")),
+            "reductions": parse_reductions(raw_dir / "parse_reductions.txt"),
+            "error": parse_error_kv(raw_dir / "parse_error.txt"),
         }
     return payload
 
@@ -418,6 +511,7 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
         6: "LR(1) I0 闭包与 Goto",
         7: "LR(1) 规范族与状态转移图",
         8: "Action/Goto 分析表与冲突处理",
+        9: "LR 总控程序执行与解析轨迹",
     }
 
     for step in steps:
@@ -457,7 +551,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="为 YACC 可视化页面准备 JSON 数据")
     parser.add_argument("--case", default="", help="仅处理指定 case_id，例如 c99")
     parser.add_argument(
-        "--steps", default="3,4,5,6,7,8", help="处理步骤列表，逗号分隔，默认 3,4,5,6,7,8"
+        "--steps", default="3,4,5,6,7,8,9", help="处理步骤列表，逗号分隔，默认 3,4,5,6,7,8,9"
     )
     parser.add_argument(
         "--artifacts-root", default="artifacts/yacc", help="YACC 原始产物目录"

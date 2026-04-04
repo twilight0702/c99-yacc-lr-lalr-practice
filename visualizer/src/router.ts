@@ -6,6 +6,7 @@ import Step5Page from "./views/Step5Page.vue";
 import Step6Page from "./views/Step6Page.vue";
 import Step7Page from "./views/Step7Page.vue";
 import Step8Page from "./views/Step8Page.vue";
+import Step9Page from "./views/Step9Page.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -17,6 +18,7 @@ export const router = createRouter({
     { path: "/step5", component: Step5Page },
     { path: "/step6", component: Step6Page },
     { path: "/step7", component: Step7Page },
-    { path: "/step8", component: Step8Page }
+    { path: "/step8", component: Step8Page },
+    { path: "/step9", component: Step9Page }
   ]
 });

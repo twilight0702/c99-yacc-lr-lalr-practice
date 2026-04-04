@@ -1,7 +1,7 @@
 {
   "schema_version": "yacc-visualizer/v1",
   "case_id": "c99",
-  "generated_at": "2026-04-04T10:07:41.109627+00:00",
+  "generated_at": "2026-04-04T11:07:16.522081+00:00",
   "source": "c99.y",
   "steps": {
     "3": {
@@ -44,6 +44,13 @@
       "title": "Action/Goto 分析表与冲突处理",
       "files": {
         "data": "step8/data.json"
+      }
+    },
+    "9": {
+      "step": 9,
+      "title": "LR 总控程序执行与解析轨迹",
+      "files": {
+        "data": "step9/data.json"
       }
     }
   }

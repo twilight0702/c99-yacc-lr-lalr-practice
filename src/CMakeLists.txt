@@ -5,6 +5,7 @@ add_library(yacc_core
     yacc/parser/yacc_parser.cpp
     yacc/preprocess/grammar_preprocessor.cpp
     yacc/report/report_exporter.cpp
+    yacc/runtime/lr_parser.cpp
     yacc/table/parse_table.cpp
 )
 

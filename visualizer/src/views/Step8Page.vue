@@ -253,31 +253,34 @@ const filteredGotoRows = computed(() => {
 const actionTotalPages = computed(() => Math.max(1, Math.ceil(filteredActionRows.value.length / pageSize)));
 const gotoTotalPages = computed(() => Math.max(1, Math.ceil(filteredGotoRows.value.length / pageSize)));
 const mergedRows = computed(() => {
+  const actionByState = new Map<number, string[]>();
+  const gotoByState = new Map<number, string[]>();
   const states = new Set<number>();
+
   for (const row of actionRows.value) {
     states.add(row.state_id);
+    const arr = actionByState.get(row.state_id) ?? [];
+    arr.push(`${row.terminal_name}:${row.action}`);
+    actionByState.set(row.state_id, arr);
   }
   for (const row of gotoRows.value) {
     states.add(row.state_id);
+    const arr = gotoByState.get(row.state_id) ?? [];
+    arr.push(`${row.nonterminal_name}:I${row.to_state}`);
+    gotoByState.set(row.state_id, arr);
   }
 
-  return Array.from(states)
-    .sort((a, b) => a - b)
-    .map((stateId) => {
-      const actionOfState = actionRows.value
-        .filter((x) => x.state_id === stateId)
-        .map((x) => `${x.terminal_name}:${x.action}`);
-      const gotoOfState = gotoRows.value
-        .filter((x) => x.state_id === stateId)
-        .map((x) => `${x.nonterminal_name}:I${x.to_state}`);
-      return {
-        state_id: stateId,
-        action_full: actionOfState.join(" | "),
-        goto_full: gotoOfState.join(" | "),
-        action_preview: summarizeCell(actionOfState),
-        goto_preview: summarizeCell(gotoOfState)
-      };
-    });
+  return Array.from(states).sort((a, b) => a - b).map((stateId) => {
+    const actionOfState = actionByState.get(stateId) ?? [];
+    const gotoOfState = gotoByState.get(stateId) ?? [];
+    return {
+      state_id: stateId,
+      action_full: actionOfState.join(" | "),
+      goto_full: gotoOfState.join(" | "),
+      action_preview: summarizeCell(actionOfState),
+      goto_preview: summarizeCell(gotoOfState)
+    };
+  });
 });
 
 const filteredMergedRows = computed(() => {

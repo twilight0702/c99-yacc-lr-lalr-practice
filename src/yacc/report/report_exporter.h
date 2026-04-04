@@ -7,6 +7,7 @@
 #include "yacc/lr1/lr1_items.h"
 #include "yacc/model/grammar.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
+#include "yacc/runtime/lr_parser.h"
 #include "yacc/table/parse_table.h"
 
 namespace seu::yacc {
@@ -71,5 +72,18 @@ void export_step8_report(const Grammar& grammar, const GrammarAnalysis& analysis
     const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
     const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
     const LR1Step8ValidationReport& lr1_step8_validation, const std::string& output_dir);
+
+// 第 9 步导出目录约定：artifacts/yacc/step9/<input_stem>/
+std::string make_default_step9_export_dir(const std::string& input_path);
+
+// 将第 9 步 LR 解析执行结果导出。
+void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
+    const LR1Step8ValidationReport& lr1_step8_validation, const LRParseRunResult& parse_result,
+    const std::vector<RuntimeToken>& input_tokens, const std::string& token_source,
+    const std::string& output_dir);
 
 }  // namespace seu::yacc

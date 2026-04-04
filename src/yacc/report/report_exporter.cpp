@@ -125,6 +125,12 @@ std::string make_default_step8_export_dir(const std::string& input_path) {
     return (std::filesystem::path("artifacts") / "yacc" / "step8" / stem).string();
 }
 
+std::string make_default_step9_export_dir(const std::string& input_path) {
+    const std::filesystem::path p(input_path);
+    const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
+    return (std::filesystem::path("artifacts") / "yacc" / "step9" / stem).string();
+}
+
 void export_report(
     const Grammar& grammar, const GrammarAnalysis& analysis, const std::string& output_dir) {
     const std::filesystem::path root(output_dir);
@@ -880,6 +886,127 @@ void export_step8_report(const Grammar& grammar, const GrammarAnalysis& analysis
     report += "unused_terminals_count=" + std::to_string(analysis.unused_terminal_ids.size()) + "\n";
     report += "unreachable_nonterminals_count=" +
               std::to_string(analysis.unreachable_nonterminal_ids.size()) + "\n";
+
+    write_text_file(analysis_dir / "report.txt", report);
+}
+
+void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
+    const LR1Step8ValidationReport& lr1_step8_validation, const LRParseRunResult& parse_result,
+    const std::vector<RuntimeToken>& input_tokens, const std::string& token_source,
+    const std::string& output_dir) {
+    // 复用 step8 导出作为基础，再追加 step9 产物。
+    export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation, lr1_step6_result,
+        lr1_step6_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result, lr1_step8_validation,
+        output_dir);
+
+    const std::filesystem::path root(output_dir);
+    const std::filesystem::path raw_dir = root / "raw";
+    const std::filesystem::path analysis_dir = root / "analysis";
+    std::filesystem::create_directories(raw_dir);
+    std::filesystem::create_directories(analysis_dir);
+
+    // 1) summary.txt：覆盖为 step9 信息。
+    std::string summary;
+    summary += "source=" + grammar.source_path + "\n";
+    summary += "step=9\n";
+    summary += "token_source=" + token_source + "\n";
+    summary += "input_tokens=" + std::to_string(input_tokens.size()) + "\n";
+    summary += "parse_accepted=" + std::string(parse_result.accepted ? "true" : "false") + "\n";
+    summary += "parse_total_steps=" + std::to_string(parse_result.total_steps) + "\n";
+    summary += "parse_consumed_tokens=" + std::to_string(parse_result.consumed_tokens) + "\n";
+    summary += "parse_reductions=" + std::to_string(parse_result.reduction_production_ids.size()) + "\n";
+    summary += "parse_trace_rows=" + std::to_string(parse_result.trace_rows.size()) + "\n";
+    write_text_file(root / "summary.txt", summary);
+
+    // 2) raw/parse_input_tokens.tsv
+    std::string token_tsv = "index\tsymbol_id\tsymbol_name\tlexeme\tline\tcolumn\n";
+    for (std::size_t i = 0; i < input_tokens.size(); ++i) {
+        const auto& tk = input_tokens[i];
+        token_tsv += std::to_string(i) + "\t" + std::to_string(tk.symbol_id) + "\t" + tk.symbol_name + "\t" +
+                     tk.lexeme + "\t" + std::to_string(tk.line) + "\t" + std::to_string(tk.column) + "\n";
+    }
+    write_text_file(raw_dir / "parse_input_tokens.tsv", token_tsv);
+
+    // 3) raw/parse_trace.tsv
+    std::string trace_tsv =
+        "step\tstate\tlookahead_id\tlookahead\taction\tproduction_id\tstate_stack\tsymbol_stack\tinput_index\n";
+    for (const auto& row : parse_result.trace_rows) {
+        trace_tsv += std::to_string(row.step_no) + "\t" + std::to_string(row.state_id) + "\t" +
+                     std::to_string(row.lookahead_symbol_id) + "\t" + row.lookahead_symbol_name + "\t" +
+                     row.action_text + "\t" + std::to_string(row.production_id) + "\t" + row.state_stack_text +
+                     "\t" + row.symbol_stack_text + "\t" + std::to_string(row.input_index) + "\n";
+    }
+    write_text_file(raw_dir / "parse_trace.tsv", trace_tsv);
+
+    // 4) raw/parse_reductions.txt
+    std::string reductions_text;
+    for (std::size_t i = 0; i < parse_result.reduction_production_ids.size(); ++i) {
+        const int pid = parse_result.reduction_production_ids[i];
+        reductions_text += std::to_string(i + 1) + ". #" + std::to_string(pid) + " ";
+        if (pid >= 0 && pid < static_cast<int>(grammar.productions.size())) {
+            const auto& p = grammar.productions[pid];
+            reductions_text += grammar.symbols[p.lhs_symbol_id].name + " ->";
+            if (p.rhs_symbol_ids.empty()) {
+                reductions_text += " epsilon";
+            } else {
+                for (int rhs_id : p.rhs_symbol_ids) {
+                    reductions_text += " " + grammar.symbols[rhs_id].name;
+                }
+            }
+        }
+        reductions_text += "\n";
+    }
+    write_text_file(raw_dir / "parse_reductions.txt", reductions_text);
+
+    // 5) raw/parse_error.txt
+    std::string error_text;
+    if (parse_result.error.has_error) {
+        error_text += "step=" + std::to_string(parse_result.error.step_no) + "\n";
+        error_text += "input_index=" + std::to_string(parse_result.error.input_index) + "\n";
+        error_text += "state=" + std::to_string(parse_result.error.state_id) + "\n";
+        error_text += "lookahead_id=" + std::to_string(parse_result.error.lookahead_symbol_id) + "\n";
+        error_text += "lookahead=" + parse_result.error.lookahead_symbol_name + "\n";
+        error_text += "message=" + parse_result.error.message + "\n";
+        error_text += "expected=";
+        for (std::size_t i = 0; i < parse_result.error.expected_terminal_ids.size(); ++i) {
+            const int sid = parse_result.error.expected_terminal_ids[i];
+            if (sid >= 0 && sid < static_cast<int>(grammar.symbols.size())) {
+                error_text += grammar.symbols[sid].name;
+            } else {
+                error_text += "<invalid>";
+            }
+            if (i + 1 < parse_result.error.expected_terminal_ids.size()) {
+                error_text += ", ";
+            }
+        }
+        error_text += "\n";
+    } else {
+        error_text = "no_error\n";
+    }
+    write_text_file(raw_dir / "parse_error.txt", error_text);
+
+    // 6) analysis/report.txt：覆盖为 step9 诊断结果。
+    std::string report;
+    report += "preprocess_passed=" + std::string(preprocess_report.passed ? "true" : "false") + "\n";
+    report += "first_validation_passed=" + std::string(first_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step6_validation_passed=" + std::string(lr1_step6_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step7_validation_passed=" + std::string(lr1_step7_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step8_validation_passed=" + std::string(lr1_step8_validation.passed ? "true" : "false") + "\n";
+    report += "parse_accepted=" + std::string(parse_result.accepted ? "true" : "false") + "\n";
+    report += "parse_error=" + std::string(parse_result.error.has_error ? "true" : "false") + "\n";
+    report += "parse_total_steps=" + std::to_string(parse_result.total_steps) + "\n";
+    report += "parse_reductions=" + std::to_string(parse_result.reduction_production_ids.size()) + "\n";
+    report += "productions_with_actions=" + std::to_string(analysis.productions_with_actions) + "\n";
+    report += "unused_terminals_count=" + std::to_string(analysis.unused_terminal_ids.size()) + "\n";
+    report += "unreachable_nonterminals_count=" +
+              std::to_string(analysis.unreachable_nonterminal_ids.size()) + "\n";
+    if (parse_result.error.has_error) {
+        report += "parse_error_message=" + parse_result.error.message + "\n";
+    }
 
     write_text_file(analysis_dir / "report.txt", report);
 }

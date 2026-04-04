@@ -10,6 +10,7 @@
 #include "yacc/parser/yacc_parser.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
 #include "yacc/report/report_exporter.h"
+#include "yacc/runtime/lr_parser.h"
 #include "yacc/table/parse_table.h"
 
 namespace {
@@ -193,6 +194,31 @@ void print_step8_table_result(const seu::yacc::LR1Step8Result& step8_result,
     }
 }
 
+void print_step9_parse_result(const seu::yacc::Grammar& grammar, const seu::yacc::LRParseRunResult& parse_result) {
+    std::cout << "[第9步 LR 总控程序] " << (parse_result.accepted ? "accept" : "not-accept") << '\n';
+    std::cout << "执行步数: " << parse_result.total_steps << '\n';
+    std::cout << "规约次数: " << parse_result.reduction_production_ids.size() << '\n';
+    std::cout << "已消费 token 数(含可能自动补的$): " << parse_result.consumed_tokens << '\n';
+    if (parse_result.error.has_error) {
+        std::cout << "错误信息: " << parse_result.error.message << '\n';
+        std::cout << "错误位置: step=" << parse_result.error.step_no
+                  << ", input_index=" << parse_result.error.input_index
+                  << ", state=" << parse_result.error.state_id
+                  << ", lookahead=" << parse_result.error.lookahead_symbol_name << '\n';
+        if (!parse_result.error.expected_terminal_ids.empty()) {
+            std::cout << "期待终结符(前10个):";
+            const std::size_t limit = std::min<std::size_t>(10, parse_result.error.expected_terminal_ids.size());
+            for (std::size_t i = 0; i < limit; ++i) {
+                const int sid = parse_result.error.expected_terminal_ids[i];
+                if (sid >= 0 && sid < static_cast<int>(grammar.symbols.size())) {
+                    std::cout << " " << grammar.symbols[sid].name;
+                }
+            }
+            std::cout << '\n';
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -202,10 +228,13 @@ int main(int argc, char** argv) {
     bool run_validate = true;
     bool export_report = false;
     std::string export_dir;
+    std::string token_file_path;
+    int max_parse_steps = 200000;
 
     // 轻量参数解析：
     // yacc_parse_tool [input.y] [--dump-symbols] [--dump-productions]
     //                [--export] [--export-dir <dir>] [--no-validate]
+    //                [--parse-tokens <file>] [--max-parse-steps <n>]
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--dump-symbols") {
@@ -233,6 +262,22 @@ int main(int argc, char** argv) {
             export_dir = argv[++i];
             continue;
         }
+        if (arg == "--parse-tokens") {
+            if (i + 1 >= argc) {
+                std::cerr << "--parse-tokens 缺少文件参数\n";
+                return 1;
+            }
+            token_file_path = argv[++i];
+            continue;
+        }
+        if (arg == "--max-parse-steps") {
+            if (i + 1 >= argc) {
+                std::cerr << "--max-parse-steps 缺少数值参数\n";
+                return 1;
+            }
+            max_parse_steps = std::stoi(argv[++i]);
+            continue;
+        }
         input_path = arg;
     }
 
@@ -255,6 +300,14 @@ int main(int argc, char** argv) {
             seu::yacc::build_step8_lr1_parsing_table(grammar, lr1_step7_result);
         const seu::yacc::LR1Step8ValidationReport lr1_step8_validation =
             seu::yacc::validate_step8_lr1_parsing_table(grammar, lr1_step7_result, lr1_step8_result);
+        bool run_step9 = !token_file_path.empty();
+        std::vector<seu::yacc::RuntimeToken> runtime_tokens;
+        seu::yacc::LRParseRunResult parse_result;
+        if (run_step9) {
+            runtime_tokens = seu::yacc::load_runtime_tokens_from_file(grammar, token_file_path);
+            parse_result =
+                seu::yacc::run_step9_lr_parse(grammar, lr1_step8_result, runtime_tokens, max_parse_steps);
+        }
 
         if (run_validate) {
             std::string validate_error;
@@ -307,6 +360,11 @@ int main(int argc, char** argv) {
         print_step6_lr1_result(grammar, lr1_result, lr1_validation);
         print_step7_lr1_result(grammar, lr1_step7_result, lr1_step7_validation);
         print_step8_table_result(lr1_step8_result, lr1_step8_validation);
+        if (run_step9) {
+            print_step9_parse_result(grammar, parse_result);
+        } else {
+            std::cout << "[第9步 LR 总控程序] 已跳过（未提供 --parse-tokens）\n";
+        }
 
         if (dump_symbols) {
             print_symbols(grammar);
@@ -316,11 +374,18 @@ int main(int argc, char** argv) {
         }
         if (export_report) {
             if (export_dir.empty()) {
-                export_dir = seu::yacc::make_default_step8_export_dir(input_path);
+                export_dir = run_step9 ? seu::yacc::make_default_step9_export_dir(input_path)
+                                       : seu::yacc::make_default_step8_export_dir(input_path);
             }
-            seu::yacc::export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation,
-                lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result,
-                lr1_step8_validation, export_dir);
+            if (run_step9) {
+                seu::yacc::export_step9_report(grammar, analysis, preprocess_report, first_result, first_validation,
+                    lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result,
+                    lr1_step8_validation, parse_result, runtime_tokens, token_file_path, export_dir);
+            } else {
+                seu::yacc::export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation,
+                    lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result,
+                    lr1_step8_validation, export_dir);
+            }
             std::cout << "[导出] 已写入: " << export_dir << '\n';
             std::cout << "[导出结构] summary.txt, raw/, analysis/\n";
         }

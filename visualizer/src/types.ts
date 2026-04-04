@@ -109,4 +109,31 @@ export interface StepData {
       reason: string;
     }>;
   };
+  parse_runtime?: {
+    input_tokens: Array<{
+      index: number;
+      symbol_id: number;
+      symbol_name: string;
+      lexeme: string;
+      line: number;
+      column: number;
+    }>;
+    trace_rows: Array<{
+      step: number;
+      state: number;
+      lookahead_id: number;
+      lookahead: string;
+      action: string;
+      production_id: number;
+      state_stack: string;
+      symbol_stack: string;
+      input_index: number;
+    }>;
+    reductions: Array<{
+      index: number;
+      production_id: number;
+      text: string;
+    }>;
+    error: Record<string, string>;
+  };
 }
