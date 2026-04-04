@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "yacc/first/first_set.h"
 #include "yacc/model/grammar.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
 
@@ -30,5 +31,13 @@ std::string make_default_step4_export_dir(const std::string& input_path);
 // 将第 4 步“文法预处理”结果导出。
 void export_step4_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const std::string& output_dir);
+
+// 第 5 步导出目录约定：artifacts/yacc/step5/<input_stem>/
+std::string make_default_step5_export_dir(const std::string& input_path);
+
+// 将第 5 步 First 集结果导出。
+void export_step5_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const std::string& output_dir);
 
 }  // namespace seu::yacc

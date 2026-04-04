@@ -1,7 +1,10 @@
+#include <algorithm>
 #include <iostream>
+#include <set>
 #include <string>
 #include <vector>
 
+#include "yacc/first/first_set.h"
 #include "yacc/model/grammar.h"
 #include "yacc/parser/yacc_parser.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
@@ -114,6 +117,21 @@ void print_preprocess_result(
     }
 }
 
+void print_first_set_result(const seu::yacc::Grammar& grammar, const seu::yacc::FirstSetResult& first_result,
+    const seu::yacc::FirstSetValidationReport& first_validation) {
+    std::cout << "[第5步 First 集] " << (first_validation.passed ? "通过" : "失败") << '\n';
+    std::cout << "First 迭代轮次: " << first_result.iteration_count << '\n';
+    std::cout << "可空非终结符数: " << first_result.nullable_nonterminal_ids.size() << '\n';
+    if (!first_result.nullable_nonterminal_ids.empty()) {
+        std::cout << "可空非终结符(前10个):";
+        const std::size_t limit = std::min<std::size_t>(10, first_result.nullable_nonterminal_ids.size());
+        for (std::size_t i = 0; i < limit; ++i) {
+            std::cout << " " << grammar.symbols[first_result.nullable_nonterminal_ids[i]].name;
+        }
+        std::cout << '\n';
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -162,6 +180,9 @@ int main(int argc, char** argv) {
         print_summary(grammar);
         const seu::yacc::GrammarPreprocessReport preprocess_report = seu::yacc::preprocess_grammar(grammar);
         const seu::yacc::GrammarAnalysis analysis = seu::yacc::analyze_grammar(grammar);
+        const seu::yacc::FirstSetResult first_result = seu::yacc::compute_first_sets(grammar);
+        const seu::yacc::FirstSetValidationReport first_validation =
+            seu::yacc::validate_first_sets(grammar, first_result);
 
         if (run_validate) {
             std::string validate_error;
@@ -178,10 +199,18 @@ int main(int argc, char** argv) {
                 }
                 return 4;
             }
+            if (!first_validation.passed) {
+                std::cout << "[第5步 First 集] 失败\n";
+                for (const auto& e : first_validation.errors) {
+                    std::cout << "- " << e << '\n';
+                }
+                return 5;
+            }
         } else {
             std::cout << "[校验] 已跳过\n";
         }
         print_preprocess_result(grammar, preprocess_report);
+        print_first_set_result(grammar, first_result, first_validation);
 
         if (dump_symbols) {
             print_symbols(grammar);
@@ -191,9 +220,10 @@ int main(int argc, char** argv) {
         }
         if (export_report) {
             if (export_dir.empty()) {
-                export_dir = seu::yacc::make_default_step4_export_dir(input_path);
+                export_dir = seu::yacc::make_default_step5_export_dir(input_path);
             }
-            seu::yacc::export_step4_report(grammar, analysis, preprocess_report, export_dir);
+            seu::yacc::export_step5_report(
+                grammar, analysis, preprocess_report, first_result, first_validation, export_dir);
             std::cout << "[导出] 已写入: " << export_dir << '\n';
             std::cout << "[导出结构] summary.txt, raw/, analysis/\n";
         }

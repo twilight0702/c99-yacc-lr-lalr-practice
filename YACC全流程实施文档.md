@@ -2,8 +2,8 @@
 
 ## 文档状态
 
-- 版本：`v0.3`
-- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4` 步。
+- 版本：`v0.4`
+- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5` 步。
 - 依据文件：
 - `c99.y`
 - `docs/编译原理专题实践：全周期详细进度计划.md`
@@ -13,14 +13,15 @@
 
 ## 一、阶段目标（当前版本）
 
-本版本完成四件事：
+本版本完成五件事：
 
 1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
 2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
 3. 完成 Yacc 输入文件解析器实现（第 3 步）。
 4. 完成文法预处理与增广文法构造校验（第 4 步）。
+5. 完成 First 集与符号串 First 计算（第 5 步）。
 
-这四项完成后，后续可直接进入“First/LR 项目集算法实现”。
+这五项完成后，后续可直接进入“LR(1) 项目集算法实现”。
 
 ---
 
@@ -337,14 +338,82 @@ artifacts/
 
 ---
 
-## 六、阶段结论与后续入口
+## 六、第 5 步交付：First 集计算（已完成）
 
-当前文档已把第 1、2、3、4 步从“讨论状态”提升为“定稿 + 实现状态”。
+## 6.1 代码落地位置
 
-下一阶段直接从第 5 步开始实现：
+1. `src/yacc/first/first_set.h`
+2. `src/yacc/first/first_set.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 5 步执行流）
+4. `src/yacc/report/report_exporter.h`
+5. `src/yacc/report/report_exporter.cpp`（新增 step5 导出）
 
-1. First 集算法实现（含符号串 First，用于 LR(1) lookahead）。
-2. LR(1) 项、Closure/Goto 和状态集构造。
-3. Action/Goto 表构造与冲突检测。
+## 6.2 第 5 步已实现能力
+
+核心接口：
+
+```text
+FirstSetResult compute_first_sets(const Grammar& grammar);
+std::set<int> compute_first_of_sequence(const Grammar& grammar,
+                                        const FirstSetResult& result,
+                                        const std::vector<int>& symbol_ids,
+                                        size_t start_index = 0);
+FirstSetValidationReport validate_first_sets(const Grammar& grammar,
+                                             const FirstSetResult& result);
+```
+
+已实现处理：
+
+1. 终结符、`$`、`epsilon` 的 First 初始化。
+2. 非终结符 First 不动点迭代与 epsilon 传播。
+3. 可空非终结符自动统计。
+4. 符号串 First(β) 计算（用于后续 LR(1) lookahead）。
+5. First 集关键不变量校验与失败中断机制。
+
+## 6.3 第 5 步结构化导出
+
+第 5 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step5/
+      <input_stem>/
+        summary.txt
+        raw/
+          symbols.tsv
+          productions.txt
+          augmented_grammar.txt
+          prod_index_by_lhs.tsv
+          first_sets.tsv
+          first_sequence_examples.txt
+          user_subroutines.c
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y`
+2. `./build/src/yacc_parse_tool c99.y --export`
+
+验收信号（`analysis/report.txt`）：
+
+1. `first_converged=true`
+2. `first_validation_passed=true`
+
+结论：第 5 步已完成。
+
+---
+
+## 七、阶段结论与后续入口
+
+当前文档已把第 1、2、3、4、5 步从“讨论状态”提升为“定稿 + 实现状态”。
+
+下一阶段直接从第 6 步开始实现：
+
+1. LR(1) 项、Closure/Goto 和状态集构造。
+2. Action/Goto 表构造与冲突检测。
+3. LR 总控程序与词法接口联调。
 
 本文件将持续追加后续步骤，保持“YACC 全流程仅一份总文档”。
