@@ -1,0 +1,36 @@
+{
+  "schema_version": "yacc-visualizer/v1",
+  "case_id": "c99",
+  "generated_at": "2026-04-04T08:33:02.201291+00:00",
+  "source": "c99.y",
+  "steps": {
+    "3": {
+      "step": 3,
+      "title": "输入解析结果",
+      "files": {
+        "data": "step3/data.json"
+      }
+    },
+    "4": {
+      "step": 4,
+      "title": "文法预处理与增广",
+      "files": {
+        "data": "step4/data.json"
+      }
+    },
+    "5": {
+      "step": 5,
+      "title": "First 集计算",
+      "files": {
+        "data": "step5/data.json"
+      }
+    },
+    "6": {
+      "step": 6,
+      "title": "LR(1) I0 闭包与 Goto",
+      "files": {
+        "data": "step6/data.json"
+      }
+    }
+  }
+}
