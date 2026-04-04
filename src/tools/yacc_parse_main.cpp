@@ -153,6 +153,25 @@ void print_step6_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::
     std::cout << "lookahead 来源说明条目: " << lr1_result.lookahead_derivation_notes.size() << '\n';
 }
 
+void print_step7_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::LR1Step7Result& lr1_result,
+    const seu::yacc::LR1Step7ValidationReport& lr1_validation) {
+    std::cout << "[第7步 LR(1) 规范族/状态图] " << (lr1_validation.passed ? "通过" : "失败") << '\n';
+    std::cout << "状态总数: " << lr1_result.states.size() << '\n';
+    std::cout << "转移边总数: " << lr1_result.transitions.size() << '\n';
+    if (!lr1_result.transitions.empty()) {
+        std::cout << "前10条边:\n";
+        const std::size_t limit = std::min<std::size_t>(10, lr1_result.transitions.size());
+        for (std::size_t i = 0; i < limit; ++i) {
+            const auto& edge = lr1_result.transitions[i];
+            std::string sym = "<invalid>";
+            if (edge.symbol_id >= 0 && edge.symbol_id < static_cast<int>(grammar.symbols.size())) {
+                sym = grammar.symbols[edge.symbol_id].name;
+            }
+            std::cout << "  I" << edge.from_state_id << " --" << sym << "--> I" << edge.to_state_id << '\n';
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -207,6 +226,10 @@ int main(int argc, char** argv) {
         const seu::yacc::LR1Step6Result lr1_result = seu::yacc::build_step6_lr1_items(grammar, first_result);
         const seu::yacc::LR1Step6ValidationReport lr1_validation =
             seu::yacc::validate_step6_lr1_items(grammar, first_result, lr1_result);
+        const seu::yacc::LR1Step7Result lr1_step7_result =
+            seu::yacc::build_step7_lr1_canonical_collection(grammar, first_result);
+        const seu::yacc::LR1Step7ValidationReport lr1_step7_validation =
+            seu::yacc::validate_step7_lr1_canonical_collection(grammar, first_result, lr1_step7_result);
 
         if (run_validate) {
             std::string validate_error;
@@ -237,12 +260,20 @@ int main(int argc, char** argv) {
                 }
                 return 6;
             }
+            if (!lr1_step7_validation.passed) {
+                std::cout << "[第7步 LR(1) 规范族/状态图] 失败\n";
+                for (const auto& e : lr1_step7_validation.errors) {
+                    std::cout << "- " << e << '\n';
+                }
+                return 7;
+            }
         } else {
             std::cout << "[校验] 已跳过\n";
         }
         print_preprocess_result(grammar, preprocess_report);
         print_first_set_result(grammar, first_result, first_validation);
         print_step6_lr1_result(grammar, lr1_result, lr1_validation);
+        print_step7_lr1_result(grammar, lr1_step7_result, lr1_step7_validation);
 
         if (dump_symbols) {
             print_symbols(grammar);
@@ -252,10 +283,10 @@ int main(int argc, char** argv) {
         }
         if (export_report) {
             if (export_dir.empty()) {
-                export_dir = seu::yacc::make_default_step6_export_dir(input_path);
+                export_dir = seu::yacc::make_default_step7_export_dir(input_path);
             }
-            seu::yacc::export_step6_report(grammar, analysis, preprocess_report, first_result,
-                first_validation, lr1_result, lr1_validation, export_dir);
+            seu::yacc::export_step7_report(grammar, analysis, preprocess_report, first_result,
+                first_validation, lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, export_dir);
             std::cout << "[导出] 已写入: " << export_dir << '\n';
             std::cout << "[导出结构] summary.txt, raw/, analysis/\n";
         }

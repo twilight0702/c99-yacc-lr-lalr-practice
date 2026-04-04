@@ -5,6 +5,7 @@
 #include <set>
 #include <sstream>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace seu::yacc {
@@ -150,6 +151,29 @@ std::vector<LR1Item> goto_of_items(const Grammar& grammar, const FirstSetResult&
     return closure_of_items(grammar, first_result, moved_items, nullptr);
 }
 
+std::string build_item_set_key(const std::vector<LR1Item>& items) {
+    std::ostringstream oss;
+    for (const auto& item : items) {
+        oss << item.production_id << ":" << item.dot_pos << ":" << item.lookahead_symbol_id << ";";
+    }
+    return oss.str();
+}
+
+std::set<int> collect_transition_symbols(const Grammar& grammar, const std::vector<LR1Item>& items) {
+    std::set<int> transition_symbols;
+    for (const LR1Item& item : items) {
+        if (!is_valid_production_id(grammar, item.production_id)) {
+            continue;
+        }
+        const auto& p = grammar.productions[item.production_id];
+        if (item.dot_pos < 0 || item.dot_pos >= static_cast<int>(p.rhs_symbol_ids.size())) {
+            continue;
+        }
+        transition_symbols.insert(p.rhs_symbol_ids[item.dot_pos]);
+    }
+    return transition_symbols;
+}
+
 bool is_item_valid(const Grammar& grammar, const LR1Item& item) {
     if (!is_valid_production_id(grammar, item.production_id)) {
         return false;
@@ -228,17 +252,7 @@ LR1Step6Result build_step6_lr1_items(const Grammar& grammar, const FirstSetResul
         closure_of_items(grammar, first_result, result.i0_kernel_items, &result.lookahead_derivation_notes);
 
     // 枚举 I0 中点后符号，计算所有非空 goto(I0, X)。
-    std::set<int> transition_symbols;
-    for (const LR1Item& item : result.i0_closure_items) {
-        if (!is_valid_production_id(grammar, item.production_id)) {
-            continue;
-        }
-        const auto& p = grammar.productions[item.production_id];
-        if (item.dot_pos < 0 || item.dot_pos >= static_cast<int>(p.rhs_symbol_ids.size())) {
-            continue;
-        }
-        transition_symbols.insert(p.rhs_symbol_ids[item.dot_pos]);
-    }
+    const std::set<int> transition_symbols = collect_transition_symbols(grammar, result.i0_closure_items);
 
     for (int symbol_id : transition_symbols) {
         std::vector<LR1Item> goto_items =
@@ -348,6 +362,142 @@ LR1Step6ValidationReport validate_step6_lr1_items(
 
     if (result.lookahead_derivation_notes.empty()) {
         report.warnings.push_back("当前文法在 I0 无可展开项，lookahead 来源说明为空。");
+    }
+
+    report.passed = report.errors.empty();
+    return report;
+}
+
+LR1Step7Result build_step7_lr1_canonical_collection(
+    const Grammar& grammar, const FirstSetResult& first_result) {
+    LR1Step7Result result;
+    if (grammar.productions.empty() || !is_valid_symbol_id(grammar, grammar.eof_symbol_id)) {
+        return result;
+    }
+
+    const std::vector<LR1Item> i0_kernel = {LR1Item{0, 0, grammar.eof_symbol_id}};
+    const std::vector<LR1Item> i0_closure = closure_of_items(grammar, first_result, i0_kernel, nullptr);
+    if (i0_closure.empty()) {
+        return result;
+    }
+
+    std::unordered_map<std::string, int> state_id_by_key;
+    std::deque<int> pending;
+
+    result.states.push_back(LR1State{0, i0_closure});
+    state_id_by_key.emplace(build_item_set_key(i0_closure), 0);
+    pending.push_back(0);
+
+    while (!pending.empty()) {
+        const int from_state_id = pending.front();
+        pending.pop_front();
+        if (from_state_id < 0 || from_state_id >= static_cast<int>(result.states.size())) {
+            continue;
+        }
+
+        // 注意：后续可能 push_back 新状态导致 result.states 重新分配，
+        // 这里必须复制一份源状态项集，避免悬空引用。
+        const auto from_items = result.states[from_state_id].items;
+        const std::set<int> transition_symbols = collect_transition_symbols(grammar, from_items);
+        for (int symbol_id : transition_symbols) {
+            std::vector<LR1Item> target_items = goto_of_items(grammar, first_result, from_items, symbol_id);
+            if (target_items.empty()) {
+                continue;
+            }
+
+            const std::string key = build_item_set_key(target_items);
+            int to_state_id = -1;
+            auto it = state_id_by_key.find(key);
+            if (it == state_id_by_key.end()) {
+                to_state_id = static_cast<int>(result.states.size());
+                result.states.push_back(LR1State{to_state_id, std::move(target_items)});
+                state_id_by_key.emplace(key, to_state_id);
+                pending.push_back(to_state_id);
+            } else {
+                to_state_id = it->second;
+            }
+
+            result.transitions.push_back(LR1Transition{from_state_id, symbol_id, to_state_id});
+        }
+    }
+
+    std::sort(result.transitions.begin(), result.transitions.end(),
+        [](const LR1Transition& a, const LR1Transition& b) {
+            return std::tie(a.from_state_id, a.symbol_id, a.to_state_id) <
+                   std::tie(b.from_state_id, b.symbol_id, b.to_state_id);
+        });
+
+    return result;
+}
+
+LR1Step7ValidationReport validate_step7_lr1_canonical_collection(
+    const Grammar& grammar, const FirstSetResult& first_result, const LR1Step7Result& result) {
+    LR1Step7ValidationReport report;
+    if (result.states.empty()) {
+        report.errors.push_back("状态集合为空。");
+        report.passed = false;
+        return report;
+    }
+    if (result.states.front().state_id != 0) {
+        report.errors.push_back("初始状态编号必须为 0。");
+    }
+
+    std::unordered_set<std::string> state_keys;
+    for (std::size_t i = 0; i < result.states.size(); ++i) {
+        const auto& state = result.states[i];
+        if (state.state_id != static_cast<int>(i)) {
+            report.errors.push_back("状态编号与数组下标不一致。");
+            break;
+        }
+        if (state.items.empty()) {
+            report.errors.push_back("存在空状态项集。");
+            break;
+        }
+
+        std::unordered_set<LR1Item, LR1ItemKeyHash, LR1ItemKeyEq> uniq_items;
+        for (const auto& item : state.items) {
+            if (!is_item_valid(grammar, item)) {
+                report.errors.push_back("状态中存在非法 LR(1) 项。");
+                break;
+            }
+            if (!uniq_items.insert(item).second) {
+                report.errors.push_back("状态中存在重复 LR(1) 项。");
+                break;
+            }
+        }
+        const std::string key = build_item_set_key(state.items);
+        if (!state_keys.insert(key).second) {
+            report.errors.push_back("存在重复状态（项集判等冲突）。");
+            break;
+        }
+    }
+
+    for (const auto& edge : result.transitions) {
+        if (edge.from_state_id < 0 || edge.from_state_id >= static_cast<int>(result.states.size())) {
+            report.errors.push_back("存在非法转移源状态编号。");
+            break;
+        }
+        if (edge.to_state_id < 0 || edge.to_state_id >= static_cast<int>(result.states.size())) {
+            report.errors.push_back("存在非法转移目标状态编号。");
+            break;
+        }
+        if (!is_valid_symbol_id(grammar, edge.symbol_id)) {
+            report.errors.push_back("存在非法转移符号编号。");
+            break;
+        }
+
+        const auto& from_items = result.states[edge.from_state_id].items;
+        const auto& to_items = result.states[edge.to_state_id].items;
+        const std::vector<LR1Item> expected_items =
+            goto_of_items(grammar, first_result, from_items, edge.symbol_id);
+        if (build_item_set_key(expected_items) != build_item_set_key(to_items)) {
+            report.errors.push_back("存在 goto 与状态转移不一致的边。");
+            break;
+        }
+    }
+
+    if (result.transitions.empty()) {
+        report.warnings.push_back("当前规范族没有可用转移边。");
     }
 
     report.passed = report.errors.empty();

@@ -36,6 +36,32 @@ struct LR1Step6ValidationReport {
     std::vector<std::string> warnings;
 };
 
+// LR(1) 状态（规范族中的一个项目集）。
+struct LR1State {
+    int state_id = -1;
+    std::vector<LR1Item> items;
+};
+
+// LR(1) 状态转移边：state --symbol--> state
+struct LR1Transition {
+    int from_state_id = -1;
+    int symbol_id = -1;
+    int to_state_id = -1;
+};
+
+// 第 7 步输出：完整 LR(1) 项目集规范族与状态转移图。
+struct LR1Step7Result {
+    std::vector<LR1State> states;
+    std::vector<LR1Transition> transitions;
+};
+
+// 第 7 步校验报告：确保规范族完整、状态去重一致、goto 转移正确。
+struct LR1Step7ValidationReport {
+    bool passed = false;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+};
+
 // 构造第 6 步核心产物：I0 kernel、closure(I0) 与基于 I0 的 goto(I0, X)。
 LR1Step6Result build_step6_lr1_items(
     const Grammar& grammar, const FirstSetResult& first_result);
@@ -47,8 +73,18 @@ LR1Step6Result build_step6_lr1_items(
 LR1Step6ValidationReport validate_step6_lr1_items(
     const Grammar& grammar, const FirstSetResult& first_result, const LR1Step6Result& result);
 
+// 构造第 7 步核心产物：完整 LR(1) 项目集规范族与状态转移图。
+LR1Step7Result build_step7_lr1_canonical_collection(
+    const Grammar& grammar, const FirstSetResult& first_result);
+
+// 校验第 7 步结果：
+// 1) 状态项合法性；
+// 2) 状态去重一致性；
+// 3) 转移合法性与 goto 一致性。
+LR1Step7ValidationReport validate_step7_lr1_canonical_collection(
+    const Grammar& grammar, const FirstSetResult& first_result, const LR1Step7Result& result);
+
 // 将 LR(1) 项渲染成可读文本。
 std::string format_lr1_item(const Grammar& grammar, const LR1Item& item);
 
 }  // namespace seu::yacc
-

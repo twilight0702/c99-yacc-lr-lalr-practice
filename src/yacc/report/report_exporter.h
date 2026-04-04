@@ -50,4 +50,14 @@ void export_step6_report(const Grammar& grammar, const GrammarAnalysis& analysis
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_result,
     const LR1Step6ValidationReport& lr1_validation, const std::string& output_dir);
 
+// 第 7 步导出目录约定：artifacts/yacc/step7/<input_stem>/
+std::string make_default_step7_export_dir(const std::string& input_path);
+
+// 将第 7 步 LR(1) 项目集规范族与状态转移图导出。
+void export_step7_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const std::string& output_dir);
+
 }  // namespace seu::yacc

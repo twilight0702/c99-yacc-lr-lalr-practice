@@ -112,6 +112,12 @@ std::string make_default_step6_export_dir(const std::string& input_path) {
     return (std::filesystem::path("artifacts") / "yacc" / "step6" / stem).string();
 }
 
+std::string make_default_step7_export_dir(const std::string& input_path) {
+    const std::filesystem::path p(input_path);
+    const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
+    return (std::filesystem::path("artifacts") / "yacc" / "step7" / stem).string();
+}
+
 void export_report(
     const Grammar& grammar, const GrammarAnalysis& analysis, const std::string& output_dir) {
     const std::filesystem::path root(output_dir);
@@ -576,6 +582,124 @@ void export_step6_report(const Grammar& grammar, const GrammarAnalysis& analysis
     if (!lr1_validation.warnings.empty()) {
         report += "lr1_step6_warnings:\n";
         for (const auto& w : lr1_validation.warnings) {
+            report += "- " + w + "\n";
+        }
+    }
+    report += "productions_with_actions=" + std::to_string(analysis.productions_with_actions) + "\n";
+    report += "unused_terminals_count=" + std::to_string(analysis.unused_terminal_ids.size()) + "\n";
+    report += "unreachable_nonterminals_count=" +
+              std::to_string(analysis.unreachable_nonterminal_ids.size()) + "\n";
+
+    write_text_file(analysis_dir / "report.txt", report);
+}
+
+void export_step7_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const std::string& output_dir) {
+    // 复用 step6 导出作为基础，再追加 step7 产物。
+    export_step6_report(grammar, analysis, preprocess_report, first_result, first_validation, lr1_step6_result,
+        lr1_step6_validation, output_dir);
+
+    const std::filesystem::path root(output_dir);
+    const std::filesystem::path raw_dir = root / "raw";
+    const std::filesystem::path analysis_dir = root / "analysis";
+
+    std::filesystem::create_directories(raw_dir);
+    std::filesystem::create_directories(analysis_dir);
+
+    // 1) summary.txt：覆盖为 step7 信息。
+    std::string summary;
+    summary += "source=" + grammar.source_path + "\n";
+    summary += "step=7\n";
+    summary += "symbols=" + std::to_string(grammar.symbols.size()) + "\n";
+    summary += "terminals=" + std::to_string(grammar.terminal_ids.size()) + "\n";
+    summary += "nonterminals=" + std::to_string(grammar.nonterminal_ids.size()) + "\n";
+    summary += "productions_with_augmented=" + std::to_string(grammar.productions.size()) + "\n";
+    summary += "preprocess_passed=" + std::string(preprocess_report.passed ? "true" : "false") + "\n";
+    summary += "first_validation_passed=" + std::string(first_validation.passed ? "true" : "false") + "\n";
+    summary += "lr1_step6_validation_passed=" + std::string(lr1_step6_validation.passed ? "true" : "false") + "\n";
+    summary += "lr1_states=" + std::to_string(lr1_step7_result.states.size()) + "\n";
+    summary += "lr1_transitions=" + std::to_string(lr1_step7_result.transitions.size()) + "\n";
+    summary += "lr1_step7_validation_passed=" + std::string(lr1_step7_validation.passed ? "true" : "false") + "\n";
+    write_text_file(root / "summary.txt", summary);
+
+    // 2) raw/lr1_states.tsv
+    std::string states_tsv = "state_id\titem_count\n";
+    for (const auto& state : lr1_step7_result.states) {
+        states_tsv += std::to_string(state.state_id) + "\t" + std::to_string(state.items.size()) + "\n";
+    }
+    write_text_file(raw_dir / "lr1_states.tsv", states_tsv);
+
+    // 3) raw/lr1_state_items.txt
+    std::ostringstream state_items_text;
+    for (const auto& state : lr1_step7_result.states) {
+        state_items_text << "[state " << state.state_id << "]\n";
+        for (const auto& item : state.items) {
+            state_items_text << format_lr1_item(grammar, item) << "\n";
+        }
+        state_items_text << "\n";
+    }
+    write_text_file(raw_dir / "lr1_state_items.txt", state_items_text.str());
+
+    // 4) raw/lr1_transitions.tsv
+    std::string transitions_tsv = "from_state\tsymbol_id\tsymbol_name\tto_state\n";
+    for (const auto& edge : lr1_step7_result.transitions) {
+        const std::string symbol_name =
+            (edge.symbol_id >= 0 && edge.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[edge.symbol_id].name
+                : "<invalid>";
+        transitions_tsv += std::to_string(edge.from_state_id) + "\t" + std::to_string(edge.symbol_id) + "\t" +
+                           symbol_name + "\t" + std::to_string(edge.to_state_id) + "\n";
+    }
+    write_text_file(raw_dir / "lr1_transitions.tsv", transitions_tsv);
+
+    // 5) raw/lr1_predecessors.tsv：便于追踪状态来源。
+    std::vector<std::vector<std::string>> predecessor_rows(lr1_step7_result.states.size());
+    for (const auto& edge : lr1_step7_result.transitions) {
+        if (edge.to_state_id < 0 || edge.to_state_id >= static_cast<int>(predecessor_rows.size())) {
+            continue;
+        }
+        const std::string symbol_name =
+            (edge.symbol_id >= 0 && edge.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[edge.symbol_id].name
+                : "<invalid>";
+        predecessor_rows[edge.to_state_id].push_back(
+            std::to_string(edge.from_state_id) + "--" + symbol_name + "-->" + std::to_string(edge.to_state_id));
+    }
+    std::string predecessor_tsv = "state_id\tpredecessors\n";
+    for (std::size_t state_id = 0; state_id < predecessor_rows.size(); ++state_id) {
+        predecessor_tsv += std::to_string(state_id) + "\t";
+        for (std::size_t i = 0; i < predecessor_rows[state_id].size(); ++i) {
+            predecessor_tsv += predecessor_rows[state_id][i];
+            if (i + 1 < predecessor_rows[state_id].size()) {
+                predecessor_tsv += ",";
+            }
+        }
+        predecessor_tsv += "\n";
+    }
+    write_text_file(raw_dir / "lr1_predecessors.tsv", predecessor_tsv);
+
+    // 6) analysis/report.txt：覆盖为 step7 诊断结果。
+    std::string report;
+    report += "preprocess_passed=" + std::string(preprocess_report.passed ? "true" : "false") + "\n";
+    report += "first_validation_passed=" + std::string(first_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step6_validation_passed=" + std::string(lr1_step6_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_states=" + std::to_string(lr1_step7_result.states.size()) + "\n";
+    report += "lr1_transitions=" + std::to_string(lr1_step7_result.transitions.size()) + "\n";
+    report += "lr1_step7_validation_passed=" + std::string(lr1_step7_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step7_errors_count=" + std::to_string(lr1_step7_validation.errors.size()) + "\n";
+    if (!lr1_step7_validation.errors.empty()) {
+        report += "lr1_step7_errors:\n";
+        for (const auto& e : lr1_step7_validation.errors) {
+            report += "- " + e + "\n";
+        }
+    }
+    report += "lr1_step7_warnings_count=" + std::to_string(lr1_step7_validation.warnings.size()) + "\n";
+    if (!lr1_step7_validation.warnings.empty()) {
+        report += "lr1_step7_warnings:\n";
+        for (const auto& w : lr1_step7_validation.warnings) {
             report += "- " + w + "\n";
         }
     }
