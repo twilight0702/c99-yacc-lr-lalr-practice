@@ -10,6 +10,7 @@
 #include "yacc/parser/yacc_parser.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
 #include "yacc/report/report_exporter.h"
+#include "yacc/table/parse_table.h"
 
 namespace {
 
@@ -172,6 +173,26 @@ void print_step7_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::
     }
 }
 
+void print_step8_table_result(const seu::yacc::LR1Step8Result& step8_result,
+    const seu::yacc::LR1Step8ValidationReport& step8_validation) {
+    std::size_t action_entries = 0;
+    for (const auto& row : step8_result.action_table) {
+        action_entries += row.size();
+    }
+    std::size_t goto_entries = 0;
+    for (const auto& row : step8_result.goto_table) {
+        goto_entries += row.size();
+    }
+    std::cout << "[第8步 Action/Goto 表] " << (step8_validation.passed ? "通过" : "失败") << '\n';
+    std::cout << "Action 表项数: " << action_entries << '\n';
+    std::cout << "Goto 表项数: " << goto_entries << '\n';
+    std::cout << "冲突数: " << step8_result.conflicts.size() << '\n';
+    std::cout << "冲突消解日志数: " << step8_result.conflict_resolution_logs.size() << '\n';
+    if (!step8_result.conflicts.empty()) {
+        std::cout << "冲突消解策略: shift/reduce 优先 shift；reduce/reduce 取较小产生式编号\n";
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -230,6 +251,10 @@ int main(int argc, char** argv) {
             seu::yacc::build_step7_lr1_canonical_collection(grammar, first_result);
         const seu::yacc::LR1Step7ValidationReport lr1_step7_validation =
             seu::yacc::validate_step7_lr1_canonical_collection(grammar, first_result, lr1_step7_result);
+        const seu::yacc::LR1Step8Result lr1_step8_result =
+            seu::yacc::build_step8_lr1_parsing_table(grammar, lr1_step7_result);
+        const seu::yacc::LR1Step8ValidationReport lr1_step8_validation =
+            seu::yacc::validate_step8_lr1_parsing_table(grammar, lr1_step7_result, lr1_step8_result);
 
         if (run_validate) {
             std::string validate_error;
@@ -267,6 +292,13 @@ int main(int argc, char** argv) {
                 }
                 return 7;
             }
+            if (!lr1_step8_validation.passed) {
+                std::cout << "[第8步 Action/Goto 表] 失败\n";
+                for (const auto& e : lr1_step8_validation.errors) {
+                    std::cout << "- " << e << '\n';
+                }
+                return 8;
+            }
         } else {
             std::cout << "[校验] 已跳过\n";
         }
@@ -274,6 +306,7 @@ int main(int argc, char** argv) {
         print_first_set_result(grammar, first_result, first_validation);
         print_step6_lr1_result(grammar, lr1_result, lr1_validation);
         print_step7_lr1_result(grammar, lr1_step7_result, lr1_step7_validation);
+        print_step8_table_result(lr1_step8_result, lr1_step8_validation);
 
         if (dump_symbols) {
             print_symbols(grammar);
@@ -283,10 +316,11 @@ int main(int argc, char** argv) {
         }
         if (export_report) {
             if (export_dir.empty()) {
-                export_dir = seu::yacc::make_default_step7_export_dir(input_path);
+                export_dir = seu::yacc::make_default_step8_export_dir(input_path);
             }
-            seu::yacc::export_step7_report(grammar, analysis, preprocess_report, first_result,
-                first_validation, lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, export_dir);
+            seu::yacc::export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation,
+                lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result,
+                lr1_step8_validation, export_dir);
             std::cout << "[导出] 已写入: " << export_dir << '\n';
             std::cout << "[导出结构] summary.txt, raw/, analysis/\n";
         }

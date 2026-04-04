@@ -7,6 +7,7 @@
 #include "yacc/lr1/lr1_items.h"
 #include "yacc/model/grammar.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
+#include "yacc/table/parse_table.h"
 
 namespace seu::yacc {
 
@@ -59,5 +60,16 @@ void export_step7_report(const Grammar& grammar, const GrammarAnalysis& analysis
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
     const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
     const LR1Step7ValidationReport& lr1_step7_validation, const std::string& output_dir);
+
+// 第 8 步导出目录约定：artifacts/yacc/step8/<input_stem>/
+std::string make_default_step8_export_dir(const std::string& input_path);
+
+// 将第 8 步 Action/Goto 分析表与冲突报告导出。
+void export_step8_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
+    const LR1Step8ValidationReport& lr1_step8_validation, const std::string& output_dir);
 
 }  // namespace seu::yacc

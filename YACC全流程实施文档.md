@@ -2,8 +2,8 @@
 
 ## 文档状态
 
-- 版本：`v0.5`
-- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5`、`6` 步。
+- 版本：`v0.7`
+- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5`、`6`、`7`、`8` 步。
 - 依据文件：
 - `c99.y`
 - `docs/编译原理专题实践：全周期详细进度计划.md`
@@ -13,7 +13,7 @@
 
 ## 一、阶段目标（当前版本）
 
-本版本完成六件事：
+本版本完成八件事：
 
 1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
 2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
@@ -21,8 +21,10 @@
 4. 完成文法预处理与增广文法构造校验（第 4 步）。
 5. 完成 First 集与符号串 First 计算（第 5 步）。
 6. 完成 LR(1) 项、closure(I0)、goto(I0, X)（第 6 步）。
+7. 完成 LR(1) 项目集规范族（全状态）与状态转移图（第 7 步）。
+8. 完成 Action/Goto 分析表构造、冲突检测与冲突消解日志（第 8 步）。
 
-这六项完成后，后续可直接进入“LR(1) 项目集规范族构造（全状态）”。
+这八项完成后，后续可直接进入“第 9 步 LR 总控程序（移进-归约执行）”。
 
 ---
 
@@ -478,14 +480,166 @@ artifacts/
 
 ---
 
-## 八、阶段结论与后续入口
+## 八、第 7 步交付：LR(1) 规范族与状态转移图（已完成）
 
-当前文档已把第 1、2、3、4、5、6 步从“讨论状态”提升为“定稿 + 实现状态”。
+## 8.1 代码落地位置
 
-下一阶段直接从第 7 步开始实现：
+1. `src/yacc/lr1/lr1_items.h`
+2. `src/yacc/lr1/lr1_items.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 7 步执行流）
+4. `src/yacc/report/report_exporter.h`
+5. `src/yacc/report/report_exporter.cpp`（新增 step7 导出）
 
-1. LR(1) 项目集规范族（全状态）与状态转移图。
-2. Action/Goto 表构造与冲突检测。
-3. LR 总控程序与词法接口联调。
+## 8.2 第 7 步已实现能力
+
+核心接口：
+
+```text
+LR1Step7Result build_step7_lr1_canonical_collection(const Grammar& grammar,
+                                                     const FirstSetResult& first_result);
+LR1Step7ValidationReport validate_step7_lr1_canonical_collection(
+    const Grammar& grammar,
+    const FirstSetResult& first_result,
+    const LR1Step7Result& result);
+```
+
+已实现处理：
+
+1. 从 `I0` 出发，按所有可转移符号反复执行 `goto`，构造完整 LR(1) 项目集规范族。
+2. 状态判等采用“完整 LR(1) 项集键值”去重，保证状态唯一与可复现。
+3. 输出状态转移边 `from --symbol--> to`，并可反查每个状态来源。
+4. 第 7 步校验：状态合法性、状态去重一致性、转移与 `goto` 一致性。
+
+## 8.3 第 7 步结构化导出
+
+第 7 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step7/
+      <input_stem>/
+        summary.txt
+        raw/
+          lr1_states.tsv
+          lr1_state_items.txt
+          lr1_transitions.tsv
+          lr1_predecessors.tsv
+          ...（继承 step6 及之前产物）
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y`
+2. `./build/src/yacc_parse_tool c99.y --export`
+
+验收信号（`analysis/report.txt`）：
+
+1. `lr1_step7_validation_passed=true`
+2. `lr1_states`、`lr1_transitions` 为稳定非零值（对 `c99.y`）
+
+实测结果（`c99.y`）：
+
+1. `lr1_states=1855`
+2. `lr1_transitions=17745`
+
+结论：第 7 步已完成。
+
+---
+
+## 九、第 8 步交付：Action/Goto 分析表与冲突处理（已完成）
+
+## 9.1 代码落地位置
+
+1. `src/yacc/table/parse_table.h`
+2. `src/yacc/table/parse_table.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 8 步执行流）
+4. `src/yacc/report/report_exporter.h`
+5. `src/yacc/report/report_exporter.cpp`（新增 step8 导出）
+
+## 9.2 第 8 步已实现能力
+
+核心接口：
+
+```text
+LR1Step8Result build_step8_lr1_parsing_table(const Grammar& grammar,
+                                             const LR1Step7Result& step7_result);
+LR1Step8ValidationReport validate_step8_lr1_parsing_table(
+    const Grammar& grammar,
+    const LR1Step7Result& step7_result,
+    const LR1Step8Result& step8_result);
+```
+
+已实现处理：
+
+1. 根据第 7 步状态图构造：
+- `Action[state, terminal]`：`shift/reduce/accept`
+- `Goto[state, nonterminal]`：状态跳转
+2. 冲突检测：
+- `shift/reduce`
+- `reduce/reduce`
+- 其他异常动作组合
+3. 冲突消解（确定性策略）：
+- `shift/reduce`：优先 `shift`
+- `reduce/reduce`：优先“产生式编号更小”者
+- `accept/*`：优先 `accept`
+4. 冲突日志：
+- 冲突明细（冲突发生点与相关项）
+- 冲突消解日志（最终选取动作与原因）
+5. 第 8 步校验：表项合法性、与状态转移图一致性、归约依据一致性、冲突日志一致性。
+
+## 9.3 第 8 步结构化导出
+
+第 8 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step8/
+      <input_stem>/
+        summary.txt
+        raw/
+          action_table.tsv
+          goto_table.tsv
+          parse_table_conflicts.tsv
+          parse_table_conflict_resolution.tsv
+          ...（继承 step7 及之前产物）
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y`
+2. `./build/src/yacc_parse_tool c99.y --export`
+
+验收信号（`analysis/report.txt`）：
+
+1. `lr1_step8_validation_passed=true`
+2. `parse_table_conflicts` 与 `parse_table_conflict_resolutions` 数量一致
+
+实测结果（`c99.y`）：
+
+1. `action_entries=30080`
+2. `goto_entries=7489`
+3. `parse_table_conflicts=2`
+4. `parse_table_conflict_resolutions=2`
+5. 两条冲突均为 `ELSE` 的经典 `shift/reduce` 场景，已按策略选择 `shift`。
+
+结论：第 8 步已完成。
+
+---
+
+## 十、阶段结论与后续入口
+
+当前文档已把第 1、2、3、4、5、6、7、8 步从“讨论状态”提升为“定稿 + 实现状态”。
+
+下一阶段直接进入：
+
+1. 第 9 步：LR 总控程序（移进-归约执行）。
+2. 第 10 步：LR(1) 到 LALR(1) 状态合并与冲突对比。
+3. 第 11 步及之后：词法联调、语义接口、测试与报告。
 
 本文件将持续追加后续步骤，保持“YACC 全流程仅一份总文档”。
