@@ -2,8 +2,8 @@
 
 ## 文档状态
 
-- 版本：`v0.7`
-- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5`、`6`、`7`、`8` 步。
+- 版本：`v0.9`
+- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5`、`6`、`7`、`8`、`9`、`10` 步。
 - 依据文件：
 - `c99.y`
 - `docs/编译原理专题实践：全周期详细进度计划.md`
@@ -13,7 +13,7 @@
 
 ## 一、阶段目标（当前版本）
 
-本版本完成八件事：
+本版本完成十件事：
 
 1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
 2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
@@ -23,8 +23,10 @@
 6. 完成 LR(1) 项、closure(I0)、goto(I0, X)（第 6 步）。
 7. 完成 LR(1) 项目集规范族（全状态）与状态转移图（第 7 步）。
 8. 完成 Action/Goto 分析表构造、冲突检测与冲突消解日志（第 8 步）。
+9. 完成 LR 总控程序（查表驱动移进-归约执行）与解析日志导出（第 9 步）。
+10. 完成 LR(1) 到 LALR(1) 状态合并、LALR 表构造与差异对比（第 10 步）。
 
-这八项完成后，后续可直接进入“第 9 步 LR 总控程序（移进-归约执行）”。
+当前版本已完成从输入解析到 LR/LALR 表和运行时解析的主链路，后续可直接进入第 11 步词法联调与语义接口阶段。
 
 ---
 
@@ -632,14 +634,160 @@ artifacts/
 
 ---
 
-## 十、阶段结论与后续入口
+## 十、第 9 步交付：LR 总控程序（已完成）
 
-当前文档已把第 1、2、3、4、5、6、7、8 步从“讨论状态”提升为“定稿 + 实现状态”。
+## 10.1 代码落地位置
+
+1. `src/yacc/runtime/lr_parser.h`
+2. `src/yacc/runtime/lr_parser.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 9 步参数与执行流）
+4. `scripts/yacc_step9_validate.py`（第 9 步自动验收）
+5. `contracts/yacc/tokens/*.tokens`（样例 token 流）
+
+## 10.2 第 9 步已实现能力
+
+核心接口：
+
+```text
+std::vector<RuntimeToken> load_runtime_tokens_from_file(const Grammar& grammar,
+                                                        const std::string& path);
+LRParseRunResult run_step9_lr_parse(const Grammar& grammar,
+                                    const LR1Step8Result& table,
+                                    const std::vector<RuntimeToken>& tokens,
+                                    int max_steps);
+```
+
+已实现处理：
+
+1. 读取 token 文件，支持 `TOKEN` / `TOKEN LEXEME` / `TOKEN LEXEME LINE COLUMN` 格式。
+2. 自动补 `$` 结束符，统一查表驱动执行。
+3. 维护状态栈与符号栈，执行 `shift / reduce / accept / error`。
+4. 导出完整 parse trace、规约序列、错误定位与期望终结符集合。
+5. `--max-parse-steps` 防死循环保护。
+
+## 10.3 第 9 步结构化导出
+
+第 9 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step9/
+      <input_stem>/
+        summary.txt
+        raw/
+          parse_input_tokens.tsv
+          parse_trace.tsv
+          parse_reductions.txt
+          parse_error.txt
+          ...（继承 step8 及之前产物）
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y --parse-tokens contracts/yacc/tokens/c99_decl_int.tokens --export`
+2. `python3 scripts/yacc_step9_validate.py --tokens contracts/yacc/tokens/c99_func_return_const.tokens --expect accept`
+3. `python3 scripts/yacc_step9_validate.py --tokens contracts/yacc/tokens/c99_invalid_if.tokens --expect reject`
+
+验收信号（`summary.txt` / `analysis/report.txt`）：
+
+1. 合法输入：`parse_accepted=true`
+2. 非法输入：`parse_error=true` 且含状态号、lookahead、expected terminals
+
+结论：第 9 步已完成。
+
+---
+
+## 十一、第 10 步交付：LR(1) 到 LALR(1) 转换（已完成）
+
+## 11.1 代码落地位置
+
+1. `src/yacc/lalr/lalr_builder.h`
+2. `src/yacc/lalr/lalr_builder.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 10 步执行与终端输出）
+4. `src/yacc/report/report_exporter.h`
+5. `src/yacc/report/report_exporter.cpp`（新增 step10 导出）
+
+## 11.2 第 10 步已实现能力
+
+核心接口：
+
+```text
+LR1Step10Result build_step10_lalr_from_lr1(const Grammar& grammar,
+                                           const LR1Step7Result& lr1_step7_result,
+                                           const LR1Step8Result& lr1_step8_result);
+LR1Step10ValidationReport validate_step10_lalr_from_lr1(
+    const Grammar& grammar,
+    const LR1Step7Result& lr1_step7_result,
+    const LR1Step8Result& lr1_step8_result,
+    const LR1Step10Result& step10_result);
+```
+
+已实现处理：
+
+1. 以 LR(0) 核（`production_id + dot_pos`）相同为准合并 LR(1) 状态。
+2. 合并组内 lookahead（并集）形成 LALR 状态项集。
+3. 生成 `LR(1)状态 -> LALR状态` 映射与合并组明细。
+4. 将 LR(1) 转移投影为 LALR 转移并去重。
+5. 在 LALR 状态机上重新构造 Action/Goto 表并输出冲突对比。
+6. 校验合并映射完整性、转移确定性和 LALR 表合法性。
+
+## 11.3 第 10 步结构化导出
+
+第 10 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step10/
+      <input_stem>/
+        summary.txt
+        raw/
+          lr1_to_lalr_state_map.tsv
+          lalr_merge_groups.tsv
+          lalr_state_items.txt
+          lalr_transitions.tsv
+          lalr_action_table.tsv
+          lalr_goto_table.tsv
+          lalr_parse_table_conflicts.tsv
+          lalr_parse_table_conflict_resolution.tsv
+          ...（继承 step8 及之前产物）
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y --export`
+
+验收信号（`summary.txt` / `analysis/report.txt`）：
+
+1. `lr1_step10_validation_passed=true`
+2. 可对比 `lr1_states` 与 `lalr_states`
+3. 可对比 `lr1_conflicts` 与 `lalr_conflicts`
+
+当前实测（`c99.y`）：
+
+1. `lr1_states=1855`
+2. `lalr_states=399`
+3. `state_merged=1456`
+4. `lr1_conflicts=2`
+5. `lalr_conflicts=1`
+
+结论：第 10 步已完成。
+
+---
+
+## 十二、阶段结论与后续入口
+
+当前文档已把第 1 至第 10 步从“讨论状态”提升为“定稿 + 实现状态”。
 
 下一阶段直接进入：
 
-1. 第 9 步：LR 总控程序（移进-归约执行）。
-2. 第 10 步：LR(1) 到 LALR(1) 状态合并与冲突对比。
-3. 第 11 步及之后：词法联调、语义接口、测试与报告。
+1. 第 11 步：与 Lex 对接（token 编号/命名/接口规范统一）。
+2. 第 12 步：语义接口与 AST/中间表示衔接。
+3. 第 13 步及之后：冲突与错误恢复增强、测试集、可视化与答辩材料收敛。
 
 本文件将持续追加后续步骤，保持“YACC 全流程仅一份总文档”。

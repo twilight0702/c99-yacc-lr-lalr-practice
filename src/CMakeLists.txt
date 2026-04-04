@@ -1,5 +1,6 @@
 add_library(yacc_core
     yacc/first/first_set.cpp
+    yacc/lalr/lalr_builder.cpp
     yacc/lr1/lr1_items.cpp
     yacc/model/grammar.cpp
     yacc/parser/yacc_parser.cpp

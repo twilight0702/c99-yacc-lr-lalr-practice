@@ -1,7 +1,7 @@
 {
   "schema_version": "yacc-visualizer/v1",
   "case_id": "c99",
-  "generated_at": "2026-04-04T11:31:15.274186+00:00",
+  "generated_at": "2026-04-04T12:03:31.547171+00:00",
   "source": "c99.y",
   "steps": {
     "1": {
@@ -65,6 +65,13 @@
       "title": "LR 总控程序执行与解析轨迹",
       "files": {
         "data": "step9/data.json"
+      }
+    },
+    "10": {
+      "step": 10,
+      "title": "LR(1) 到 LALR(1) 合并与对比",
+      "files": {
+        "data": "step10/data.json"
       }
     }
   }

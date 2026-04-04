@@ -15,6 +15,7 @@
       <RouterLink class="nav-item" to="/step7">Step 7</RouterLink>
       <RouterLink class="nav-item" to="/step8">Step 8</RouterLink>
       <RouterLink class="nav-item" to="/step9">Step 9</RouterLink>
+      <RouterLink class="nav-item" to="/step10">Step 10</RouterLink>
     </nav>
   </aside>
 </template>

@@ -131,6 +131,12 @@ std::string make_default_step9_export_dir(const std::string& input_path) {
     return (std::filesystem::path("artifacts") / "yacc" / "step9" / stem).string();
 }
 
+std::string make_default_step10_export_dir(const std::string& input_path) {
+    const std::filesystem::path p(input_path);
+    const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
+    return (std::filesystem::path("artifacts") / "yacc" / "step10" / stem).string();
+}
+
 void export_report(
     const Grammar& grammar, const GrammarAnalysis& analysis, const std::string& output_dir) {
     const std::filesystem::path root(output_dir);
@@ -895,8 +901,9 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
     const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
     const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
-    const LR1Step8ValidationReport& lr1_step8_validation, const LRParseRunResult& parse_result,
-    const std::vector<RuntimeToken>& input_tokens, const std::string& token_source,
+    const LR1Step8ValidationReport& lr1_step8_validation, const LRParseRunResult& lr1_parse_result,
+    const LRParseRunResult& lalr_parse_result, const std::vector<RuntimeToken>& input_tokens,
+    const std::string& token_source,
     const std::string& output_dir) {
     // 复用 step8 导出作为基础，再追加 step9 产物。
     export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation, lr1_step6_result,
@@ -915,11 +922,16 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     summary += "step=9\n";
     summary += "token_source=" + token_source + "\n";
     summary += "input_tokens=" + std::to_string(input_tokens.size()) + "\n";
-    summary += "parse_accepted=" + std::string(parse_result.accepted ? "true" : "false") + "\n";
-    summary += "parse_total_steps=" + std::to_string(parse_result.total_steps) + "\n";
-    summary += "parse_consumed_tokens=" + std::to_string(parse_result.consumed_tokens) + "\n";
-    summary += "parse_reductions=" + std::to_string(parse_result.reduction_production_ids.size()) + "\n";
-    summary += "parse_trace_rows=" + std::to_string(parse_result.trace_rows.size()) + "\n";
+    summary += "lr1_parse_accepted=" + std::string(lr1_parse_result.accepted ? "true" : "false") + "\n";
+    summary += "lr1_parse_total_steps=" + std::to_string(lr1_parse_result.total_steps) + "\n";
+    summary += "lr1_parse_consumed_tokens=" + std::to_string(lr1_parse_result.consumed_tokens) + "\n";
+    summary += "lr1_parse_reductions=" + std::to_string(lr1_parse_result.reduction_production_ids.size()) + "\n";
+    summary += "lr1_parse_trace_rows=" + std::to_string(lr1_parse_result.trace_rows.size()) + "\n";
+    summary += "lalr_parse_accepted=" + std::string(lalr_parse_result.accepted ? "true" : "false") + "\n";
+    summary += "lalr_parse_total_steps=" + std::to_string(lalr_parse_result.total_steps) + "\n";
+    summary += "lalr_parse_consumed_tokens=" + std::to_string(lalr_parse_result.consumed_tokens) + "\n";
+    summary += "lalr_parse_reductions=" + std::to_string(lalr_parse_result.reduction_production_ids.size()) + "\n";
+    summary += "lalr_parse_trace_rows=" + std::to_string(lalr_parse_result.trace_rows.size()) + "\n";
     write_text_file(root / "summary.txt", summary);
 
     // 2) raw/parse_input_tokens.tsv
@@ -934,7 +946,7 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     // 3) raw/parse_trace.tsv
     std::string trace_tsv =
         "step\tstate\tlookahead_id\tlookahead\taction\tproduction_id\tstate_stack\tsymbol_stack\tinput_index\n";
-    for (const auto& row : parse_result.trace_rows) {
+    for (const auto& row : lr1_parse_result.trace_rows) {
         trace_tsv += std::to_string(row.step_no) + "\t" + std::to_string(row.state_id) + "\t" +
                      std::to_string(row.lookahead_symbol_id) + "\t" + row.lookahead_symbol_name + "\t" +
                      row.action_text + "\t" + std::to_string(row.production_id) + "\t" + row.state_stack_text +
@@ -942,10 +954,21 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     }
     write_text_file(raw_dir / "parse_trace.tsv", trace_tsv);
 
+    // 3b) raw/parse_trace_lalr.tsv
+    std::string trace_lalr_tsv =
+        "step\tstate\tlookahead_id\tlookahead\taction\tproduction_id\tstate_stack\tsymbol_stack\tinput_index\n";
+    for (const auto& row : lalr_parse_result.trace_rows) {
+        trace_lalr_tsv += std::to_string(row.step_no) + "\t" + std::to_string(row.state_id) + "\t" +
+                          std::to_string(row.lookahead_symbol_id) + "\t" + row.lookahead_symbol_name + "\t" +
+                          row.action_text + "\t" + std::to_string(row.production_id) + "\t" + row.state_stack_text +
+                          "\t" + row.symbol_stack_text + "\t" + std::to_string(row.input_index) + "\n";
+    }
+    write_text_file(raw_dir / "parse_trace_lalr.tsv", trace_lalr_tsv);
+
     // 4) raw/parse_reductions.txt
     std::string reductions_text;
-    for (std::size_t i = 0; i < parse_result.reduction_production_ids.size(); ++i) {
-        const int pid = parse_result.reduction_production_ids[i];
+    for (std::size_t i = 0; i < lr1_parse_result.reduction_production_ids.size(); ++i) {
+        const int pid = lr1_parse_result.reduction_production_ids[i];
         reductions_text += std::to_string(i + 1) + ". #" + std::to_string(pid) + " ";
         if (pid >= 0 && pid < static_cast<int>(grammar.productions.size())) {
             const auto& p = grammar.productions[pid];
@@ -962,24 +985,44 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     }
     write_text_file(raw_dir / "parse_reductions.txt", reductions_text);
 
+    // 4b) raw/parse_reductions_lalr.txt
+    std::string reductions_lalr_text;
+    for (std::size_t i = 0; i < lalr_parse_result.reduction_production_ids.size(); ++i) {
+        const int pid = lalr_parse_result.reduction_production_ids[i];
+        reductions_lalr_text += std::to_string(i + 1) + ". #" + std::to_string(pid) + " ";
+        if (pid >= 0 && pid < static_cast<int>(grammar.productions.size())) {
+            const auto& p = grammar.productions[pid];
+            reductions_lalr_text += grammar.symbols[p.lhs_symbol_id].name + " ->";
+            if (p.rhs_symbol_ids.empty()) {
+                reductions_lalr_text += " epsilon";
+            } else {
+                for (int rhs_id : p.rhs_symbol_ids) {
+                    reductions_lalr_text += " " + grammar.symbols[rhs_id].name;
+                }
+            }
+        }
+        reductions_lalr_text += "\n";
+    }
+    write_text_file(raw_dir / "parse_reductions_lalr.txt", reductions_lalr_text);
+
     // 5) raw/parse_error.txt
     std::string error_text;
-    if (parse_result.error.has_error) {
-        error_text += "step=" + std::to_string(parse_result.error.step_no) + "\n";
-        error_text += "input_index=" + std::to_string(parse_result.error.input_index) + "\n";
-        error_text += "state=" + std::to_string(parse_result.error.state_id) + "\n";
-        error_text += "lookahead_id=" + std::to_string(parse_result.error.lookahead_symbol_id) + "\n";
-        error_text += "lookahead=" + parse_result.error.lookahead_symbol_name + "\n";
-        error_text += "message=" + parse_result.error.message + "\n";
+    if (lr1_parse_result.error.has_error) {
+        error_text += "step=" + std::to_string(lr1_parse_result.error.step_no) + "\n";
+        error_text += "input_index=" + std::to_string(lr1_parse_result.error.input_index) + "\n";
+        error_text += "state=" + std::to_string(lr1_parse_result.error.state_id) + "\n";
+        error_text += "lookahead_id=" + std::to_string(lr1_parse_result.error.lookahead_symbol_id) + "\n";
+        error_text += "lookahead=" + lr1_parse_result.error.lookahead_symbol_name + "\n";
+        error_text += "message=" + lr1_parse_result.error.message + "\n";
         error_text += "expected=";
-        for (std::size_t i = 0; i < parse_result.error.expected_terminal_ids.size(); ++i) {
-            const int sid = parse_result.error.expected_terminal_ids[i];
+        for (std::size_t i = 0; i < lr1_parse_result.error.expected_terminal_ids.size(); ++i) {
+            const int sid = lr1_parse_result.error.expected_terminal_ids[i];
             if (sid >= 0 && sid < static_cast<int>(grammar.symbols.size())) {
                 error_text += grammar.symbols[sid].name;
             } else {
                 error_text += "<invalid>";
             }
-            if (i + 1 < parse_result.error.expected_terminal_ids.size()) {
+            if (i + 1 < lr1_parse_result.error.expected_terminal_ids.size()) {
                 error_text += ", ";
             }
         }
@@ -989,6 +1032,33 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     }
     write_text_file(raw_dir / "parse_error.txt", error_text);
 
+    // 5b) raw/parse_error_lalr.txt
+    std::string error_lalr_text;
+    if (lalr_parse_result.error.has_error) {
+        error_lalr_text += "step=" + std::to_string(lalr_parse_result.error.step_no) + "\n";
+        error_lalr_text += "input_index=" + std::to_string(lalr_parse_result.error.input_index) + "\n";
+        error_lalr_text += "state=" + std::to_string(lalr_parse_result.error.state_id) + "\n";
+        error_lalr_text += "lookahead_id=" + std::to_string(lalr_parse_result.error.lookahead_symbol_id) + "\n";
+        error_lalr_text += "lookahead=" + lalr_parse_result.error.lookahead_symbol_name + "\n";
+        error_lalr_text += "message=" + lalr_parse_result.error.message + "\n";
+        error_lalr_text += "expected=";
+        for (std::size_t i = 0; i < lalr_parse_result.error.expected_terminal_ids.size(); ++i) {
+            const int sid = lalr_parse_result.error.expected_terminal_ids[i];
+            if (sid >= 0 && sid < static_cast<int>(grammar.symbols.size())) {
+                error_lalr_text += grammar.symbols[sid].name;
+            } else {
+                error_lalr_text += "<invalid>";
+            }
+            if (i + 1 < lalr_parse_result.error.expected_terminal_ids.size()) {
+                error_lalr_text += ", ";
+            }
+        }
+        error_lalr_text += "\n";
+    } else {
+        error_lalr_text = "no_error\n";
+    }
+    write_text_file(raw_dir / "parse_error_lalr.txt", error_lalr_text);
+
     // 6) analysis/report.txt：覆盖为 step9 诊断结果。
     std::string report;
     report += "preprocess_passed=" + std::string(preprocess_report.passed ? "true" : "false") + "\n";
@@ -996,18 +1066,241 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     report += "lr1_step6_validation_passed=" + std::string(lr1_step6_validation.passed ? "true" : "false") + "\n";
     report += "lr1_step7_validation_passed=" + std::string(lr1_step7_validation.passed ? "true" : "false") + "\n";
     report += "lr1_step8_validation_passed=" + std::string(lr1_step8_validation.passed ? "true" : "false") + "\n";
-    report += "parse_accepted=" + std::string(parse_result.accepted ? "true" : "false") + "\n";
-    report += "parse_error=" + std::string(parse_result.error.has_error ? "true" : "false") + "\n";
-    report += "parse_total_steps=" + std::to_string(parse_result.total_steps) + "\n";
-    report += "parse_reductions=" + std::to_string(parse_result.reduction_production_ids.size()) + "\n";
+    report += "lr1_parse_accepted=" + std::string(lr1_parse_result.accepted ? "true" : "false") + "\n";
+    report += "lr1_parse_error=" + std::string(lr1_parse_result.error.has_error ? "true" : "false") + "\n";
+    report += "lr1_parse_total_steps=" + std::to_string(lr1_parse_result.total_steps) + "\n";
+    report += "lr1_parse_reductions=" + std::to_string(lr1_parse_result.reduction_production_ids.size()) + "\n";
+    report += "lalr_parse_accepted=" + std::string(lalr_parse_result.accepted ? "true" : "false") + "\n";
+    report += "lalr_parse_error=" + std::string(lalr_parse_result.error.has_error ? "true" : "false") + "\n";
+    report += "lalr_parse_total_steps=" + std::to_string(lalr_parse_result.total_steps) + "\n";
+    report += "lalr_parse_reductions=" + std::to_string(lalr_parse_result.reduction_production_ids.size()) + "\n";
     report += "productions_with_actions=" + std::to_string(analysis.productions_with_actions) + "\n";
     report += "unused_terminals_count=" + std::to_string(analysis.unused_terminal_ids.size()) + "\n";
     report += "unreachable_nonterminals_count=" +
               std::to_string(analysis.unreachable_nonterminal_ids.size()) + "\n";
-    if (parse_result.error.has_error) {
-        report += "parse_error_message=" + parse_result.error.message + "\n";
+    if (lr1_parse_result.error.has_error) {
+        report += "lr1_parse_error_message=" + lr1_parse_result.error.message + "\n";
+    }
+    if (lalr_parse_result.error.has_error) {
+        report += "lalr_parse_error_message=" + lalr_parse_result.error.message + "\n";
     }
 
+    write_text_file(analysis_dir / "report.txt", report);
+}
+
+void export_step10_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
+    const LR1Step8ValidationReport& lr1_step8_validation, const LR1Step10Result& step10_result,
+    const LR1Step10ValidationReport& step10_validation, const std::string& output_dir) {
+    // 复用 step8 导出作为基础，再追加 step10 产物。
+    export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation, lr1_step6_result,
+        lr1_step6_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result, lr1_step8_validation,
+        output_dir);
+
+    const std::filesystem::path root(output_dir);
+    const std::filesystem::path raw_dir = root / "raw";
+    const std::filesystem::path analysis_dir = root / "analysis";
+    std::filesystem::create_directories(raw_dir);
+    std::filesystem::create_directories(analysis_dir);
+
+    std::size_t lalr_action_entries = 0;
+    for (const auto& row : step10_result.lalr_step8_result.action_table) {
+        lalr_action_entries += row.size();
+    }
+    std::size_t lalr_goto_entries = 0;
+    for (const auto& row : step10_result.lalr_step8_result.goto_table) {
+        lalr_goto_entries += row.size();
+    }
+
+    // 1) summary.txt：覆盖为 step10 信息。
+    std::string summary;
+    summary += "source=" + grammar.source_path + "\n";
+    summary += "step=10\n";
+    summary += "lr1_states=" + std::to_string(step10_result.lr1_state_count) + "\n";
+    summary += "lalr_states=" + std::to_string(step10_result.lalr_state_count) + "\n";
+    summary += "state_merged=" +
+               std::to_string(static_cast<long long>(step10_result.lr1_state_count) -
+                              static_cast<long long>(step10_result.lalr_state_count)) +
+               "\n";
+    summary += "lr1_conflicts=" + std::to_string(step10_result.lr1_conflict_count) + "\n";
+    summary += "lalr_conflicts=" + std::to_string(step10_result.lalr_conflict_count) + "\n";
+    summary += "lalr_action_entries=" + std::to_string(lalr_action_entries) + "\n";
+    summary += "lalr_goto_entries=" + std::to_string(lalr_goto_entries) + "\n";
+    summary += "lr1_step10_validation_passed=" + std::string(step10_validation.passed ? "true" : "false") + "\n";
+    write_text_file(root / "summary.txt", summary);
+
+    // 2) raw/lr1_to_lalr_state_map.tsv
+    std::string state_map_tsv = "lr1_state\tlalr_state\n";
+    for (std::size_t lr1_state = 0; lr1_state < step10_result.lr1_to_lalr_state_id.size(); ++lr1_state) {
+        state_map_tsv += std::to_string(lr1_state) + "\t" +
+                         std::to_string(step10_result.lr1_to_lalr_state_id[lr1_state]) + "\n";
+    }
+    write_text_file(raw_dir / "lr1_to_lalr_state_map.tsv", state_map_tsv);
+
+    // 3) raw/lalr_merge_groups.tsv
+    std::string merge_tsv = "lalr_state\tsource_lr1_states\titem_count\n";
+    for (const auto& group : step10_result.merge_groups) {
+        merge_tsv += std::to_string(group.lalr_state_id) + "\t";
+        for (std::size_t i = 0; i < group.source_lr1_state_ids.size(); ++i) {
+            merge_tsv += std::to_string(group.source_lr1_state_ids[i]);
+            if (i + 1 < group.source_lr1_state_ids.size()) {
+                merge_tsv += ",";
+            }
+        }
+        merge_tsv += "\t" + std::to_string(group.merged_items.size()) + "\n";
+    }
+    write_text_file(raw_dir / "lalr_merge_groups.tsv", merge_tsv);
+
+    // 4) raw/lalr_state_items.txt
+    std::ostringstream state_items_text;
+    for (const auto& state : step10_result.lalr_step7_result.states) {
+        state_items_text << "[state " << state.state_id << "]\n";
+        for (const auto& item : state.items) {
+            state_items_text << format_lr1_item(grammar, item) << "\n";
+        }
+        state_items_text << "\n";
+    }
+    write_text_file(raw_dir / "lalr_state_items.txt", state_items_text.str());
+
+    // 5) raw/lalr_transitions.tsv
+    std::string transitions_tsv = "from_state\tsymbol_id\tsymbol_name\tto_state\n";
+    for (const auto& edge : step10_result.lalr_step7_result.transitions) {
+        const std::string symbol_name =
+            (edge.symbol_id >= 0 && edge.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[edge.symbol_id].name
+                : "<invalid>";
+        transitions_tsv += std::to_string(edge.from_state_id) + "\t" + std::to_string(edge.symbol_id) + "\t" +
+                           symbol_name + "\t" + std::to_string(edge.to_state_id) + "\n";
+    }
+    write_text_file(raw_dir / "lalr_transitions.tsv", transitions_tsv);
+
+    // 6) raw/lalr_action_table.tsv
+    std::string action_tsv = "state_id\tterminal_id\tterminal_name\taction\ttarget\n";
+    for (std::size_t state_id = 0; state_id < step10_result.lalr_step8_result.action_table.size(); ++state_id) {
+        std::vector<std::pair<int, ParseActionEntry>> entries;
+        entries.reserve(step10_result.lalr_step8_result.action_table[state_id].size());
+        for (const auto& kv : step10_result.lalr_step8_result.action_table[state_id]) {
+            entries.push_back(kv);
+        }
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        for (const auto& kv : entries) {
+            const int symbol_id = kv.first;
+            const auto& action = kv.second;
+            const std::string symbol_name =
+                (symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size()))
+                    ? grammar.symbols[symbol_id].name
+                    : "<invalid>";
+            std::string target = "-";
+            if (action.type == ParseActionType::Shift) {
+                target = std::to_string(action.target_state_id);
+            } else if (action.type == ParseActionType::Reduce) {
+                target = std::to_string(action.reduce_production_id);
+            }
+            action_tsv += std::to_string(state_id) + "\t" + std::to_string(symbol_id) + "\t" + symbol_name + "\t" +
+                          format_parse_action_entry(action) + "\t" + target + "\n";
+        }
+    }
+    write_text_file(raw_dir / "lalr_action_table.tsv", action_tsv);
+
+    // 7) raw/lalr_goto_table.tsv
+    std::string goto_tsv = "state_id\tnonterminal_id\tnonterminal_name\tto_state\n";
+    for (std::size_t state_id = 0; state_id < step10_result.lalr_step8_result.goto_table.size(); ++state_id) {
+        std::vector<std::pair<int, int>> entries;
+        entries.reserve(step10_result.lalr_step8_result.goto_table[state_id].size());
+        for (const auto& kv : step10_result.lalr_step8_result.goto_table[state_id]) {
+            entries.push_back(kv);
+        }
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        for (const auto& kv : entries) {
+            const int symbol_id = kv.first;
+            const int to_state = kv.second;
+            const std::string symbol_name =
+                (symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size()))
+                    ? grammar.symbols[symbol_id].name
+                    : "<invalid>";
+            goto_tsv += std::to_string(state_id) + "\t" + std::to_string(symbol_id) + "\t" + symbol_name + "\t" +
+                        std::to_string(to_state) + "\n";
+        }
+    }
+    write_text_file(raw_dir / "lalr_goto_table.tsv", goto_tsv);
+
+    // 8) raw/lalr_parse_table_conflicts.tsv
+    std::string conflict_tsv =
+        "state_id\tsymbol_id\tsymbol_name\tconflict_type\texisting_action\tincoming_action\trelated_items\n";
+    for (const auto& c : step10_result.lalr_step8_result.conflicts) {
+        const std::string symbol_name =
+            (c.symbol_id >= 0 && c.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[c.symbol_id].name
+                : "<invalid>";
+        std::ostringstream related_items_text;
+        for (std::size_t i = 0; i < c.related_items.size(); ++i) {
+            related_items_text << format_lr1_item(grammar, c.related_items[i]);
+            if (i + 1 < c.related_items.size()) {
+                related_items_text << " || ";
+            }
+        }
+        conflict_tsv += std::to_string(c.state_id) + "\t" + std::to_string(c.symbol_id) + "\t" + symbol_name + "\t" +
+                        c.conflict_type + "\t" + c.existing_action + "\t" + c.incoming_action + "\t" +
+                        related_items_text.str() + "\n";
+    }
+    write_text_file(raw_dir / "lalr_parse_table_conflicts.tsv", conflict_tsv);
+
+    // 9) raw/lalr_parse_table_conflict_resolution.tsv
+    std::string resolution_tsv =
+        "state_id\tsymbol_id\tsymbol_name\tconflict_type\texisting_action\tincoming_action\tresolved_action\treason\n";
+    for (const auto& log : step10_result.lalr_step8_result.conflict_resolution_logs) {
+        const std::string symbol_name =
+            (log.symbol_id >= 0 && log.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[log.symbol_id].name
+                : "<invalid>";
+        resolution_tsv += std::to_string(log.state_id) + "\t" + std::to_string(log.symbol_id) + "\t" + symbol_name +
+                          "\t" + log.conflict_type + "\t" + log.existing_action + "\t" + log.incoming_action + "\t" +
+                          log.resolved_action + "\t" + log.reason + "\n";
+    }
+    write_text_file(raw_dir / "lalr_parse_table_conflict_resolution.tsv", resolution_tsv);
+
+    // 10) analysis/report.txt：覆盖为 step10 诊断结果。
+    std::string report;
+    report += "preprocess_passed=" + std::string(preprocess_report.passed ? "true" : "false") + "\n";
+    report += "first_converged=" + std::string(first_result.converged ? "true" : "false") + "\n";
+    report += "first_validation_passed=" + std::string(first_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step6_validation_passed=" + std::string(lr1_step6_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step7_validation_passed=" + std::string(lr1_step7_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step8_validation_passed=" + std::string(lr1_step8_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_states=" + std::to_string(step10_result.lr1_state_count) + "\n";
+    report += "lalr_states=" + std::to_string(step10_result.lalr_state_count) + "\n";
+    report += "state_merged=" +
+              std::to_string(static_cast<long long>(step10_result.lr1_state_count) -
+                             static_cast<long long>(step10_result.lalr_state_count)) +
+              "\n";
+    report += "lr1_conflicts=" + std::to_string(step10_result.lr1_conflict_count) + "\n";
+    report += "lalr_conflicts=" + std::to_string(step10_result.lalr_conflict_count) + "\n";
+    report += "lr1_step10_validation_passed=" + std::string(step10_validation.passed ? "true" : "false") + "\n";
+    report += "lr1_step10_errors_count=" + std::to_string(step10_validation.errors.size()) + "\n";
+    if (!step10_validation.errors.empty()) {
+        report += "lr1_step10_errors:\n";
+        for (const auto& e : step10_validation.errors) {
+            report += "- " + e + "\n";
+        }
+    }
+    report += "lr1_step10_warnings_count=" + std::to_string(step10_validation.warnings.size()) + "\n";
+    if (!step10_validation.warnings.empty()) {
+        report += "lr1_step10_warnings:\n";
+        for (const auto& w : step10_validation.warnings) {
+            report += "- " + w + "\n";
+        }
+    }
+    report += "productions_with_actions=" + std::to_string(analysis.productions_with_actions) + "\n";
+    report += "unused_terminals_count=" + std::to_string(analysis.unused_terminal_ids.size()) + "\n";
+    report += "unreachable_nonterminals_count=" +
+              std::to_string(analysis.unreachable_nonterminal_ids.size()) + "\n";
     write_text_file(analysis_dir / "report.txt", report);
 }
 

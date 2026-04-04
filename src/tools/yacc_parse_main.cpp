@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "yacc/first/first_set.h"
+#include "yacc/lalr/lalr_builder.h"
 #include "yacc/lr1/lr1_items.h"
 #include "yacc/model/grammar.h"
 #include "yacc/parser/yacc_parser.h"
@@ -219,6 +220,27 @@ void print_step9_parse_result(const seu::yacc::Grammar& grammar, const seu::yacc
     }
 }
 
+void print_step9_parse_compare_result(
+    const seu::yacc::LRParseRunResult& lr1_parse_result, const seu::yacc::LRParseRunResult& lalr_parse_result) {
+    std::cout << "[第9步 LR1/LALR 对比] "
+              << "lr1_accept=" << (lr1_parse_result.accepted ? "true" : "false")
+              << ", lalr_accept=" << (lalr_parse_result.accepted ? "true" : "false") << '\n';
+    std::cout << "LR1 steps=" << lr1_parse_result.total_steps
+              << ", LALR steps=" << lalr_parse_result.total_steps << '\n';
+    std::cout << "LR1 reductions=" << lr1_parse_result.reduction_production_ids.size()
+              << ", LALR reductions=" << lalr_parse_result.reduction_production_ids.size() << '\n';
+}
+
+void print_step10_lalr_result(const seu::yacc::LR1Step10Result& step10_result,
+    const seu::yacc::LR1Step10ValidationReport& step10_validation) {
+    std::cout << "[第10步 LR(1)->LALR(1)] " << (step10_validation.passed ? "通过" : "失败") << '\n';
+    std::cout << "LR(1) 状态数: " << step10_result.lr1_state_count << '\n';
+    std::cout << "LALR(1) 状态数: " << step10_result.lalr_state_count << '\n';
+    std::cout << "状态压缩数: " << (step10_result.lr1_state_count - step10_result.lalr_state_count) << '\n';
+    std::cout << "LR(1) 冲突数: " << step10_result.lr1_conflict_count << '\n';
+    std::cout << "LALR(1) 冲突数: " << step10_result.lalr_conflict_count << '\n';
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -300,13 +322,20 @@ int main(int argc, char** argv) {
             seu::yacc::build_step8_lr1_parsing_table(grammar, lr1_step7_result);
         const seu::yacc::LR1Step8ValidationReport lr1_step8_validation =
             seu::yacc::validate_step8_lr1_parsing_table(grammar, lr1_step7_result, lr1_step8_result);
+        const seu::yacc::LR1Step10Result step10_result =
+            seu::yacc::build_step10_lalr_from_lr1(grammar, lr1_step7_result, lr1_step8_result);
+        const seu::yacc::LR1Step10ValidationReport step10_validation = seu::yacc::validate_step10_lalr_from_lr1(
+            grammar, lr1_step7_result, lr1_step8_result, step10_result);
         bool run_step9 = !token_file_path.empty();
         std::vector<seu::yacc::RuntimeToken> runtime_tokens;
-        seu::yacc::LRParseRunResult parse_result;
+        seu::yacc::LRParseRunResult lr1_parse_result;
+        seu::yacc::LRParseRunResult lalr_parse_result;
         if (run_step9) {
             runtime_tokens = seu::yacc::load_runtime_tokens_from_file(grammar, token_file_path);
-            parse_result =
+            lr1_parse_result =
                 seu::yacc::run_step9_lr_parse(grammar, lr1_step8_result, runtime_tokens, max_parse_steps);
+            lalr_parse_result = seu::yacc::run_step9_lr_parse(
+                grammar, step10_result.lalr_step8_result, runtime_tokens, max_parse_steps);
         }
 
         if (run_validate) {
@@ -352,6 +381,13 @@ int main(int argc, char** argv) {
                 }
                 return 8;
             }
+            if (!step10_validation.passed) {
+                std::cout << "[第10步 LR(1)->LALR(1)] 失败\n";
+                for (const auto& e : step10_validation.errors) {
+                    std::cout << "- " << e << '\n';
+                }
+                return 10;
+            }
         } else {
             std::cout << "[校验] 已跳过\n";
         }
@@ -360,8 +396,13 @@ int main(int argc, char** argv) {
         print_step6_lr1_result(grammar, lr1_result, lr1_validation);
         print_step7_lr1_result(grammar, lr1_step7_result, lr1_step7_validation);
         print_step8_table_result(lr1_step8_result, lr1_step8_validation);
+        print_step10_lalr_result(step10_result, step10_validation);
         if (run_step9) {
-            print_step9_parse_result(grammar, parse_result);
+            std::cout << "[第9步 LR(1) 总控程序]\n";
+            print_step9_parse_result(grammar, lr1_parse_result);
+            std::cout << "[第9步 LALR(1) 总控程序]\n";
+            print_step9_parse_result(grammar, lalr_parse_result);
+            print_step9_parse_compare_result(lr1_parse_result, lalr_parse_result);
         } else {
             std::cout << "[第9步 LR 总控程序] 已跳过（未提供 --parse-tokens）\n";
         }
@@ -375,16 +416,17 @@ int main(int argc, char** argv) {
         if (export_report) {
             if (export_dir.empty()) {
                 export_dir = run_step9 ? seu::yacc::make_default_step9_export_dir(input_path)
-                                       : seu::yacc::make_default_step8_export_dir(input_path);
+                                       : seu::yacc::make_default_step10_export_dir(input_path);
             }
             if (run_step9) {
                 seu::yacc::export_step9_report(grammar, analysis, preprocess_report, first_result, first_validation,
                     lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result,
-                    lr1_step8_validation, parse_result, runtime_tokens, token_file_path, export_dir);
+                    lr1_step8_validation, lr1_parse_result, lalr_parse_result, runtime_tokens, token_file_path,
+                    export_dir);
             } else {
-                seu::yacc::export_step8_report(grammar, analysis, preprocess_report, first_result, first_validation,
+                seu::yacc::export_step10_report(grammar, analysis, preprocess_report, first_result, first_validation,
                     lr1_result, lr1_validation, lr1_step7_result, lr1_step7_validation, lr1_step8_result,
-                    lr1_step8_validation, export_dir);
+                    lr1_step8_validation, step10_result, step10_validation, export_dir);
             }
             std::cout << "[导出] 已写入: " << export_dir << '\n';
             std::cout << "[导出结构] summary.txt, raw/, analysis/\n";

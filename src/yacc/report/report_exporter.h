@@ -5,6 +5,7 @@
 
 #include "yacc/first/first_set.h"
 #include "yacc/lr1/lr1_items.h"
+#include "yacc/lalr/lalr_builder.h"
 #include "yacc/model/grammar.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
 #include "yacc/runtime/lr_parser.h"
@@ -82,8 +83,21 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
     const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
     const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
-    const LR1Step8ValidationReport& lr1_step8_validation, const LRParseRunResult& parse_result,
-    const std::vector<RuntimeToken>& input_tokens, const std::string& token_source,
+    const LR1Step8ValidationReport& lr1_step8_validation, const LRParseRunResult& lr1_parse_result,
+    const LRParseRunResult& lalr_parse_result, const std::vector<RuntimeToken>& input_tokens,
+    const std::string& token_source,
     const std::string& output_dir);
+
+// 第 10 步导出目录约定：artifacts/yacc/step10/<input_stem>/
+std::string make_default_step10_export_dir(const std::string& input_path);
+
+// 将第 10 步 LR(1)->LALR(1) 合并结果导出。
+void export_step10_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
+    const LR1Step6ValidationReport& lr1_step6_validation, const LR1Step7Result& lr1_step7_result,
+    const LR1Step7ValidationReport& lr1_step7_validation, const LR1Step8Result& lr1_step8_result,
+    const LR1Step8ValidationReport& lr1_step8_validation, const LR1Step10Result& step10_result,
+    const LR1Step10ValidationReport& step10_validation, const std::string& output_dir);
 
 }  // namespace seu::yacc

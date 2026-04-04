@@ -5,7 +5,7 @@
 设计目标：
 1. 与 /src 完全解耦（只读 artifacts 文件）。
 2. 输出稳定版本化结构 visualizer/public/data/v1/<case_id>/。
-3. 兼容 step3~step9 当前产物。
+3. 兼容 step3~step10 当前产物。
 """
 
 from __future__ import annotations
@@ -410,6 +410,33 @@ def normalize_parse_trace(rows: List[Dict[str, str]]) -> List[Dict[str, object]]
     return result
 
 
+def normalize_state_map(rows: List[Dict[str, str]]) -> List[Dict[str, int]]:
+    result: List[Dict[str, int]] = []
+    for row in rows:
+        result.append(
+            {
+                "lr1_state": int(row.get("lr1_state", "0")),
+                "lalr_state": int(row.get("lalr_state", "0")),
+            }
+        )
+    return result
+
+
+def normalize_merge_groups(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        src = row.get("source_lr1_states", "").strip()
+        source_ids = [int(x) for x in src.split(",") if x] if src else []
+        result.append(
+            {
+                "lalr_state": int(row.get("lalr_state", "0")),
+                "source_lr1_states": source_ids,
+                "item_count": int(row.get("item_count", "0")),
+            }
+        )
+    return result
+
+
 def read_augmented_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -552,9 +579,25 @@ def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, obj
     if step == 9:
         payload["parse_runtime"] = {
             "input_tokens": normalize_parse_input_tokens(parse_tsv(raw_dir / "parse_input_tokens.tsv")),
-            "trace_rows": normalize_parse_trace(parse_tsv(raw_dir / "parse_trace.tsv")),
-            "reductions": parse_reductions(raw_dir / "parse_reductions.txt"),
-            "error": parse_error_kv(raw_dir / "parse_error.txt"),
+            "lr1_trace_rows": normalize_parse_trace(parse_tsv(raw_dir / "parse_trace.tsv")),
+            "lalr_trace_rows": normalize_parse_trace(parse_tsv(raw_dir / "parse_trace_lalr.tsv")),
+            "lr1_reductions": parse_reductions(raw_dir / "parse_reductions.txt"),
+            "lalr_reductions": parse_reductions(raw_dir / "parse_reductions_lalr.txt"),
+            "lr1_error": parse_error_kv(raw_dir / "parse_error.txt"),
+            "lalr_error": parse_error_kv(raw_dir / "parse_error_lalr.txt"),
+        }
+    if step == 10:
+        payload["lalr"] = {
+            "state_map": normalize_state_map(parse_tsv(raw_dir / "lr1_to_lalr_state_map.tsv")),
+            "merge_groups": normalize_merge_groups(parse_tsv(raw_dir / "lalr_merge_groups.tsv")),
+            "state_items": parse_state_items(raw_dir / "lalr_state_items.txt"),
+            "transitions": normalize_lr1_transitions(parse_tsv(raw_dir / "lalr_transitions.tsv")),
+            "action_rows": normalize_action_table(parse_tsv(raw_dir / "lalr_action_table.tsv")),
+            "goto_rows": normalize_goto_table(parse_tsv(raw_dir / "lalr_goto_table.tsv")),
+            "conflicts": normalize_parse_conflicts(parse_tsv(raw_dir / "lalr_parse_table_conflicts.tsv")),
+            "conflict_resolutions": normalize_conflict_resolutions(
+                parse_tsv(raw_dir / "lalr_parse_table_conflict_resolution.tsv")
+            ),
         }
     return payload
 
@@ -581,6 +624,7 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
         7: "LR(1) 规范族与状态转移图",
         8: "Action/Goto 分析表与冲突处理",
         9: "LR 总控程序执行与解析轨迹",
+        10: "LR(1) 到 LALR(1) 合并与对比",
     }
 
     for step in steps:
@@ -625,7 +669,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="为 YACC 可视化页面准备 JSON 数据")
     parser.add_argument("--case", default="", help="仅处理指定 case_id，例如 c99")
     parser.add_argument(
-        "--steps", default="1,2,3,4,5,6,7,8,9", help="处理步骤列表，逗号分隔，默认 1,2,3,4,5,6,7,8,9"
+        "--steps", default="1,2,3,4,5,6,7,8,9,10", help="处理步骤列表，逗号分隔，默认 1,2,3,4,5,6,7,8,9,10"
     )
     parser.add_argument(
         "--artifacts-root", default="artifacts/yacc", help="YACC 原始产物目录"

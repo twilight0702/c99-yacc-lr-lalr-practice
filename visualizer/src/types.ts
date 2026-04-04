@@ -119,7 +119,7 @@ export interface StepData {
       line: number;
       column: number;
     }>;
-    trace_rows: Array<{
+    lr1_trace_rows: Array<{
       step: number;
       state: number;
       lookahead_id: number;
@@ -130,12 +130,79 @@ export interface StepData {
       symbol_stack: string;
       input_index: number;
     }>;
-    reductions: Array<{
+    lalr_trace_rows: Array<{
+      step: number;
+      state: number;
+      lookahead_id: number;
+      lookahead: string;
+      action: string;
+      production_id: number;
+      state_stack: string;
+      symbol_stack: string;
+      input_index: number;
+    }>;
+    lr1_reductions: Array<{
       index: number;
       production_id: number;
       text: string;
     }>;
-    error: Record<string, string>;
+    lalr_reductions: Array<{
+      index: number;
+      production_id: number;
+      text: string;
+    }>;
+    lr1_error: Record<string, string>;
+    lalr_error: Record<string, string>;
+  };
+  lalr?: {
+    state_map: Array<{
+      lr1_state: number;
+      lalr_state: number;
+    }>;
+    merge_groups: Array<{
+      lalr_state: number;
+      source_lr1_states: number[];
+      item_count: number;
+    }>;
+    state_items: Record<string, string[]>;
+    transitions: Array<{
+      from_state: number;
+      symbol_id: number;
+      symbol_name: string;
+      to_state: number;
+    }>;
+    action_rows: Array<{
+      state_id: number;
+      terminal_id: number;
+      terminal_name: string;
+      action: string;
+      target: string;
+    }>;
+    goto_rows: Array<{
+      state_id: number;
+      nonterminal_id: number;
+      nonterminal_name: string;
+      to_state: number;
+    }>;
+    conflicts: Array<{
+      state_id: number;
+      symbol_id: number;
+      symbol_name: string;
+      conflict_type: string;
+      existing_action: string;
+      incoming_action: string;
+      related_items: string;
+    }>;
+    conflict_resolutions: Array<{
+      state_id: number;
+      symbol_id: number;
+      symbol_name: string;
+      conflict_type: string;
+      existing_action: string;
+      incoming_action: string;
+      resolved_action: string;
+      reason: string;
+    }>;
   };
   step1_overview?: {
     source_exists: boolean;

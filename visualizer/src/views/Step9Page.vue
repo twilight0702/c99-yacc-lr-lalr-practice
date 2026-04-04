@@ -11,9 +11,12 @@
     <template v-else-if="data">
       <section class="metrics-grid">
         <MetricCard title="输入 token 数" :value="data.summary.input_tokens ?? '-'" />
-        <MetricCard title="解析结果" :value="data.summary.parse_accepted ?? '-'" />
-        <MetricCard title="执行步数" :value="data.summary.parse_total_steps ?? '-'" />
-        <MetricCard title="规约次数" :value="data.summary.parse_reductions ?? '-'" />
+        <MetricCard title="LR1 接受" :value="data.summary.lr1_parse_accepted ?? '-'" />
+        <MetricCard title="LALR 接受" :value="data.summary.lalr_parse_accepted ?? '-'" />
+        <MetricCard title="LR1 步数" :value="data.summary.lr1_parse_total_steps ?? '-'" />
+        <MetricCard title="LALR 步数" :value="data.summary.lalr_parse_total_steps ?? '-'" />
+        <MetricCard title="LR1 规约" :value="data.summary.lr1_parse_reductions ?? '-'" />
+        <MetricCard title="LALR 规约" :value="data.summary.lalr_parse_reductions ?? '-'" />
       </section>
 
       <section class="panel">
@@ -55,6 +58,12 @@
         <header class="panel-header">
           <h3>解析执行轨迹</h3>
           <div class="toolbar">
+            <button class="btn" :class="{ active: traceMode === 'lr1' }" type="button" @click="traceMode = 'lr1'">
+              LR1
+            </button>
+            <button class="btn" :class="{ active: traceMode === 'lalr' }" type="button" @click="traceMode = 'lalr'">
+              LALR
+            </button>
             <button class="btn" type="button" :disabled="tracePage <= 1" @click="tracePage -= 1">上一页</button>
             <span class="mono-line">第 {{ tracePage }} / {{ traceTotalPages }} 页</span>
             <button class="btn" type="button" :disabled="tracePage >= traceTotalPages" @click="tracePage += 1">
@@ -97,6 +106,22 @@
         <header class="panel-header">
           <h3>规约序列</h3>
           <div class="toolbar">
+            <button
+              class="btn"
+              :class="{ active: reductionMode === 'lr1' }"
+              type="button"
+              @click="reductionMode = 'lr1'"
+            >
+              LR1
+            </button>
+            <button
+              class="btn"
+              :class="{ active: reductionMode === 'lalr' }"
+              type="button"
+              @click="reductionMode = 'lalr'"
+            >
+              LALR
+            </button>
             <button class="btn" type="button" :disabled="reductionPage <= 1" @click="reductionPage -= 1">上一页</button>
             <span class="mono-line">第 {{ reductionPage }} / {{ reductionTotalPages }} 页</span>
             <button
@@ -131,14 +156,45 @@
 
       <section class="panel">
         <header class="panel-header">
-          <h3>错误分析</h3>
+          <h3>错误分析（LR1 vs LALR）</h3>
         </header>
-        <div class="panel-body">
-          <p class="mono-line">status: {{ runtimeError.status ?? "-" }}</p>
-          <p class="mono-line">message: {{ runtimeError.message ?? "无错误（accept）" }}</p>
-          <p class="mono-line">state: {{ runtimeError.state ?? "-" }}</p>
-          <p class="mono-line">lookahead: {{ runtimeError.lookahead ?? "-" }}</p>
-          <p class="mono-line">expected: {{ runtimeError.expected ?? "-" }}</p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>指标</th>
+                <th>LR1</th>
+                <th>LALR</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>status</td>
+                <td>{{ lr1Error.status ?? "-" }}</td>
+                <td>{{ lalrError.status ?? "-" }}</td>
+              </tr>
+              <tr>
+                <td>message</td>
+                <td>{{ lr1Error.message ?? "无错误（accept）" }}</td>
+                <td>{{ lalrError.message ?? "无错误（accept）" }}</td>
+              </tr>
+              <tr>
+                <td>state</td>
+                <td>{{ lr1Error.state ?? "-" }}</td>
+                <td>{{ lalrError.state ?? "-" }}</td>
+              </tr>
+              <tr>
+                <td>lookahead</td>
+                <td>{{ lr1Error.lookahead ?? "-" }}</td>
+                <td>{{ lalrError.lookahead ?? "-" }}</td>
+              </tr>
+              <tr>
+                <td>expected</td>
+                <td>{{ lr1Error.expected ?? "-" }}</td>
+                <td>{{ lalrError.expected ?? "-" }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </template>
@@ -161,12 +217,19 @@ const reductionPageSize = 80;
 const tokenPage = ref(1);
 const tracePage = ref(1);
 const reductionPage = ref(1);
+const traceMode = ref<"lr1" | "lalr">("lr1");
+const reductionMode = ref<"lr1" | "lalr">("lr1");
 
 const runtime = computed(() => data.value?.parse_runtime);
 const inputTokens = computed(() => runtime.value?.input_tokens ?? []);
-const traceRows = computed(() => runtime.value?.trace_rows ?? []);
-const reductions = computed(() => runtime.value?.reductions ?? []);
-const runtimeError = computed(() => runtime.value?.error ?? {});
+const lr1TraceRows = computed(() => runtime.value?.lr1_trace_rows ?? []);
+const lalrTraceRows = computed(() => runtime.value?.lalr_trace_rows ?? []);
+const traceRows = computed(() => (traceMode.value === "lr1" ? lr1TraceRows.value : lalrTraceRows.value));
+const lr1Reductions = computed(() => runtime.value?.lr1_reductions ?? []);
+const lalrReductions = computed(() => runtime.value?.lalr_reductions ?? []);
+const reductions = computed(() => (reductionMode.value === "lr1" ? lr1Reductions.value : lalrReductions.value));
+const lr1Error = computed(() => runtime.value?.lr1_error ?? {});
+const lalrError = computed(() => runtime.value?.lalr_error ?? {});
 
 const tokenTotalPages = computed(() => Math.max(1, Math.ceil(inputTokens.value.length / tokenPageSize)));
 const traceTotalPages = computed(() => Math.max(1, Math.ceil(traceRows.value.length / tracePageSize)));
@@ -247,4 +310,3 @@ onMounted(async () => {
   font-size: 12px;
 }
 </style>
-
