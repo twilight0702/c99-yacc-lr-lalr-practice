@@ -4,13 +4,13 @@
   "summary": {
     "source": "c99.y",
     "step": "9",
-    "token_source": "contracts/yacc/tokens/c99_decl_int.tokens",
-    "input_tokens": "3",
+    "token_source": "contracts/yacc/tokens/c99_func_return_const.tokens",
+    "input_tokens": "10",
     "parse_accepted": "true",
-    "parse_total_steps": "8",
-    "parse_consumed_tokens": "2",
-    "parse_reductions": "5",
-    "parse_trace_rows": "8"
+    "parse_total_steps": "40",
+    "parse_consumed_tokens": "9",
+    "parse_reductions": "30",
+    "parse_trace_rows": "40"
   },
   "analysis": {
     "preprocess_passed": "true",
@@ -20,8 +20,8 @@
     "lr1_step8_validation_passed": "true",
     "parse_accepted": "true",
     "parse_error": "false",
-    "parse_total_steps": "8",
-    "parse_reductions": "5",
+    "parse_total_steps": "40",
+    "parse_reductions": "30",
     "productions_with_actions": "0",
     "unused_terminals_count": "0",
     "unreachable_nonterminals_count": "0"
@@ -38,14 +38,70 @@
       },
       {
         "index": 1,
-        "symbol_id": 157,
-        "symbol_name": "';'",
-        "lexeme": ";",
+        "symbol_id": 36,
+        "symbol_name": "IDENTIFIER",
+        "lexeme": "main",
         "line": 1,
-        "column": 4
+        "column": 5
       },
       {
         "index": 2,
+        "symbol_id": 134,
+        "symbol_name": "'('",
+        "lexeme": "(",
+        "line": 1,
+        "column": 9
+      },
+      {
+        "index": 3,
+        "symbol_id": 135,
+        "symbol_name": "')'",
+        "lexeme": ")",
+        "line": 1,
+        "column": 10
+      },
+      {
+        "index": 4,
+        "symbol_id": 139,
+        "symbol_name": "'{'",
+        "lexeme": "{",
+        "line": 1,
+        "column": 12
+      },
+      {
+        "index": 5,
+        "symbol_id": 0,
+        "symbol_name": "RETURN",
+        "lexeme": "return",
+        "line": 2,
+        "column": 3
+      },
+      {
+        "index": 6,
+        "symbol_id": 20,
+        "symbol_name": "CONSTANT",
+        "lexeme": "0",
+        "line": 2,
+        "column": 10
+      },
+      {
+        "index": 7,
+        "symbol_id": 157,
+        "symbol_name": "';'",
+        "lexeme": ";",
+        "line": 2,
+        "column": 11
+      },
+      {
+        "index": 8,
+        "symbol_id": 140,
+        "symbol_name": "'}'",
+        "lexeme": "}",
+        "line": 3,
+        "column": 1
+      },
+      {
+        "index": 9,
         "symbol_id": 131,
         "symbol_name": "$",
         "lexeme": "$",
@@ -68,8 +124,8 @@
       {
         "step": 2,
         "state": 15,
-        "lookahead_id": 157,
-        "lookahead": "';'",
+        "lookahead_id": 36,
+        "lookahead": "IDENTIFIER",
         "action": "r99",
         "production_id": 99,
         "state_stack": "0 15",
@@ -79,8 +135,8 @@
       {
         "step": 3,
         "state": 30,
-        "lookahead_id": 157,
-        "lookahead": "';'",
+        "lookahead_id": 36,
+        "lookahead": "IDENTIFIER",
         "action": "r81",
         "production_id": 81,
         "state_stack": "0 30",
@@ -90,9 +146,9 @@
       {
         "step": 4,
         "state": 29,
-        "lookahead_id": 157,
-        "lookahead": "';'",
-        "action": "s49",
+        "lookahead_id": 36,
+        "lookahead": "IDENTIFIER",
+        "action": "s41",
         "production_id": -1,
         "state_stack": "0 29",
         "symbol_stack": "declaration_specifiers",
@@ -100,28 +156,380 @@
       },
       {
         "step": 5,
-        "state": 49,
-        "lookahead_id": 131,
-        "lookahead": "$",
-        "action": "r77",
-        "production_id": 77,
-        "state_stack": "0 29 49",
-        "symbol_stack": "declaration_specifiers ';'",
+        "state": 41,
+        "lookahead_id": 134,
+        "lookahead": "'('",
+        "action": "r143",
+        "production_id": 143,
+        "state_stack": "0 29 41",
+        "symbol_stack": "declaration_specifiers IDENTIFIER",
         "input_index": 2
       },
       {
         "step": 6,
-        "state": 33,
-        "lookahead_id": 131,
-        "lookahead": "$",
-        "action": "r233",
-        "production_id": 233,
-        "state_stack": "0 33",
-        "symbol_stack": "declaration",
+        "state": 46,
+        "lookahead_id": 134,
+        "lookahead": "'('",
+        "action": "s69",
+        "production_id": -1,
+        "state_stack": "0 29 46",
+        "symbol_stack": "declaration_specifiers direct_declarator",
         "input_index": 2
       },
       {
         "step": 7,
+        "state": 69,
+        "lookahead_id": 135,
+        "lookahead": "')'",
+        "action": "s218",
+        "production_id": -1,
+        "state_stack": "0 29 46 69",
+        "symbol_stack": "declaration_specifiers direct_declarator '('",
+        "input_index": 3
+      },
+      {
+        "step": 8,
+        "state": 218,
+        "lookahead_id": 139,
+        "lookahead": "'{'",
+        "action": "r155",
+        "production_id": 155,
+        "state_stack": "0 29 46 69 218",
+        "symbol_stack": "declaration_specifiers direct_declarator '(' ')'",
+        "input_index": 4
+      },
+      {
+        "step": 9,
+        "state": 46,
+        "lookahead_id": 139,
+        "lookahead": "'{'",
+        "action": "r142",
+        "production_id": 142,
+        "state_stack": "0 29 46",
+        "symbol_stack": "declaration_specifiers direct_declarator",
+        "input_index": 4
+      },
+      {
+        "step": 10,
+        "state": 45,
+        "lookahead_id": 139,
+        "lookahead": "'{'",
+        "action": "s67",
+        "production_id": -1,
+        "state_stack": "0 29 45",
+        "symbol_stack": "declaration_specifiers declarator",
+        "input_index": 4
+      },
+      {
+        "step": 11,
+        "state": 67,
+        "lookahead_id": 0,
+        "lookahead": "RETURN",
+        "action": "s122",
+        "production_id": -1,
+        "state_stack": "0 29 45 67",
+        "symbol_stack": "declaration_specifiers declarator '{'",
+        "input_index": 5
+      },
+      {
+        "step": 12,
+        "state": 122,
+        "lookahead_id": 20,
+        "lookahead": "CONSTANT",
+        "action": "s126",
+        "production_id": -1,
+        "state_stack": "0 29 45 67 122",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN",
+        "input_index": 6
+      },
+      {
+        "step": 13,
+        "state": 126,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r2",
+        "production_id": 2,
+        "state_stack": "0 29 45 67 122 126",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN CONSTANT",
+        "input_index": 7
+      },
+      {
+        "step": 14,
+        "state": 166,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r5",
+        "production_id": 5,
+        "state_stack": "0 29 45 67 122 166",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN primary_expression",
+        "input_index": 7
+      },
+      {
+        "step": 15,
+        "state": 159,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r17",
+        "production_id": 17,
+        "state_stack": "0 29 45 67 122 159",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN postfix_expression",
+        "input_index": 7
+      },
+      {
+        "step": 16,
+        "state": 154,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r29",
+        "production_id": 29,
+        "state_stack": "0 29 45 67 122 154",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN unary_expression",
+        "input_index": 7
+      },
+      {
+        "step": 17,
+        "state": 160,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r31",
+        "production_id": 31,
+        "state_stack": "0 29 45 67 122 160",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN cast_expression",
+        "input_index": 7
+      },
+      {
+        "step": 18,
+        "state": 161,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r35",
+        "production_id": 35,
+        "state_stack": "0 29 45 67 122 161",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN multiplicative_expression",
+        "input_index": 7
+      },
+      {
+        "step": 19,
+        "state": 162,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r38",
+        "production_id": 38,
+        "state_stack": "0 29 45 67 122 162",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN additive_expression",
+        "input_index": 7
+      },
+      {
+        "step": 20,
+        "state": 149,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r41",
+        "production_id": 41,
+        "state_stack": "0 29 45 67 122 149",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN shift_expression",
+        "input_index": 7
+      },
+      {
+        "step": 21,
+        "state": 147,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r46",
+        "production_id": 46,
+        "state_stack": "0 29 45 67 122 147",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN relational_expression",
+        "input_index": 7
+      },
+      {
+        "step": 22,
+        "state": 163,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r49",
+        "production_id": 49,
+        "state_stack": "0 29 45 67 122 163",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN equality_expression",
+        "input_index": 7
+      },
+      {
+        "step": 23,
+        "state": 146,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r51",
+        "production_id": 51,
+        "state_stack": "0 29 45 67 122 146",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN and_expression",
+        "input_index": 7
+      },
+      {
+        "step": 24,
+        "state": 158,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r53",
+        "production_id": 53,
+        "state_stack": "0 29 45 67 122 158",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN exclusive_or_expression",
+        "input_index": 7
+      },
+      {
+        "step": 25,
+        "state": 152,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r55",
+        "production_id": 55,
+        "state_stack": "0 29 45 67 122 152",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN inclusive_or_expression",
+        "input_index": 7
+      },
+      {
+        "step": 26,
+        "state": 156,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r57",
+        "production_id": 57,
+        "state_stack": "0 29 45 67 122 156",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN logical_and_expression",
+        "input_index": 7
+      },
+      {
+        "step": 27,
+        "state": 155,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r59",
+        "production_id": 59,
+        "state_stack": "0 29 45 67 122 155",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN logical_or_expression",
+        "input_index": 7
+      },
+      {
+        "step": 28,
+        "state": 151,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r61",
+        "production_id": 61,
+        "state_stack": "0 29 45 67 122 151",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN conditional_expression",
+        "input_index": 7
+      },
+      {
+        "step": 29,
+        "state": 150,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "r74",
+        "production_id": 74,
+        "state_stack": "0 29 45 67 122 150",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN assignment_expression",
+        "input_index": 7
+      },
+      {
+        "step": 30,
+        "state": 308,
+        "lookahead_id": 157,
+        "lookahead": "';'",
+        "action": "s634",
+        "production_id": -1,
+        "state_stack": "0 29 45 67 122 308",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN expression",
+        "input_index": 7
+      },
+      {
+        "step": 31,
+        "state": 634,
+        "lookahead_id": 140,
+        "lookahead": "'}'",
+        "action": "r229",
+        "production_id": 229,
+        "state_stack": "0 29 45 67 122 308 634",
+        "symbol_stack": "declaration_specifiers declarator '{' RETURN expression ';'",
+        "input_index": 8
+      },
+      {
+        "step": 32,
+        "state": 148,
+        "lookahead_id": 140,
+        "lookahead": "'}'",
+        "action": "r204",
+        "production_id": 204,
+        "state_stack": "0 29 45 67 148",
+        "symbol_stack": "declaration_specifiers declarator '{' jump_statement",
+        "input_index": 8
+      },
+      {
+        "step": 33,
+        "state": 145,
+        "lookahead_id": 140,
+        "lookahead": "'}'",
+        "action": "r213",
+        "production_id": 213,
+        "state_stack": "0 29 45 67 145",
+        "symbol_stack": "declaration_specifiers declarator '{' statement",
+        "input_index": 8
+      },
+      {
+        "step": 34,
+        "state": 142,
+        "lookahead_id": 140,
+        "lookahead": "'}'",
+        "action": "r210",
+        "production_id": 210,
+        "state_stack": "0 29 45 67 142",
+        "symbol_stack": "declaration_specifiers declarator '{' block_item",
+        "input_index": 8
+      },
+      {
+        "step": 35,
+        "state": 165,
+        "lookahead_id": 140,
+        "lookahead": "'}'",
+        "action": "s415",
+        "production_id": -1,
+        "state_stack": "0 29 45 67 165",
+        "symbol_stack": "declaration_specifiers declarator '{' block_item_list",
+        "input_index": 8
+      },
+      {
+        "step": 36,
+        "state": 415,
+        "lookahead_id": 131,
+        "lookahead": "$",
+        "action": "r209",
+        "production_id": 209,
+        "state_stack": "0 29 45 67 165 415",
+        "symbol_stack": "declaration_specifiers declarator '{' block_item_list '}'",
+        "input_index": 9
+      },
+      {
+        "step": 37,
+        "state": 66,
+        "lookahead_id": 131,
+        "lookahead": "$",
+        "action": "r235",
+        "production_id": 235,
+        "state_stack": "0 29 45 66",
+        "symbol_stack": "declaration_specifiers declarator compound_statement",
+        "input_index": 9
+      },
+      {
+        "step": 38,
+        "state": 34,
+        "lookahead_id": 131,
+        "lookahead": "$",
+        "action": "r232",
+        "production_id": 232,
+        "state_stack": "0 34",
+        "symbol_stack": "function_definition",
+        "input_index": 9
+      },
+      {
+        "step": 39,
         "state": 26,
         "lookahead_id": 131,
         "lookahead": "$",
@@ -129,10 +537,10 @@
         "production_id": 230,
         "state_stack": "0 26",
         "symbol_stack": "external_declaration",
-        "input_index": 2
+        "input_index": 9
       },
       {
-        "step": 8,
+        "step": 40,
         "state": 27,
         "lookahead_id": 131,
         "lookahead": "$",
@@ -140,7 +548,7 @@
         "production_id": -1,
         "state_stack": "0 27",
         "symbol_stack": "translation_unit",
-        "input_index": 2
+        "input_index": 9
       }
     ],
     "reductions": [
@@ -156,16 +564,141 @@
       },
       {
         "index": 3,
-        "production_id": 77,
-        "text": "declaration -> declaration_specifiers ';'"
+        "production_id": 143,
+        "text": "direct_declarator -> IDENTIFIER"
       },
       {
         "index": 4,
-        "production_id": 233,
-        "text": "external_declaration -> declaration"
+        "production_id": 155,
+        "text": "direct_declarator -> direct_declarator '(' ')'"
       },
       {
         "index": 5,
+        "production_id": 142,
+        "text": "declarator -> direct_declarator"
+      },
+      {
+        "index": 6,
+        "production_id": 2,
+        "text": "primary_expression -> CONSTANT"
+      },
+      {
+        "index": 7,
+        "production_id": 5,
+        "text": "postfix_expression -> primary_expression"
+      },
+      {
+        "index": 8,
+        "production_id": 17,
+        "text": "unary_expression -> postfix_expression"
+      },
+      {
+        "index": 9,
+        "production_id": 29,
+        "text": "cast_expression -> unary_expression"
+      },
+      {
+        "index": 10,
+        "production_id": 31,
+        "text": "multiplicative_expression -> cast_expression"
+      },
+      {
+        "index": 11,
+        "production_id": 35,
+        "text": "additive_expression -> multiplicative_expression"
+      },
+      {
+        "index": 12,
+        "production_id": 38,
+        "text": "shift_expression -> additive_expression"
+      },
+      {
+        "index": 13,
+        "production_id": 41,
+        "text": "relational_expression -> shift_expression"
+      },
+      {
+        "index": 14,
+        "production_id": 46,
+        "text": "equality_expression -> relational_expression"
+      },
+      {
+        "index": 15,
+        "production_id": 49,
+        "text": "and_expression -> equality_expression"
+      },
+      {
+        "index": 16,
+        "production_id": 51,
+        "text": "exclusive_or_expression -> and_expression"
+      },
+      {
+        "index": 17,
+        "production_id": 53,
+        "text": "inclusive_or_expression -> exclusive_or_expression"
+      },
+      {
+        "index": 18,
+        "production_id": 55,
+        "text": "logical_and_expression -> inclusive_or_expression"
+      },
+      {
+        "index": 19,
+        "production_id": 57,
+        "text": "logical_or_expression -> logical_and_expression"
+      },
+      {
+        "index": 20,
+        "production_id": 59,
+        "text": "conditional_expression -> logical_or_expression"
+      },
+      {
+        "index": 21,
+        "production_id": 61,
+        "text": "assignment_expression -> conditional_expression"
+      },
+      {
+        "index": 22,
+        "production_id": 74,
+        "text": "expression -> assignment_expression"
+      },
+      {
+        "index": 23,
+        "production_id": 229,
+        "text": "jump_statement -> RETURN expression ';'"
+      },
+      {
+        "index": 24,
+        "production_id": 204,
+        "text": "statement -> jump_statement"
+      },
+      {
+        "index": 25,
+        "production_id": 213,
+        "text": "block_item -> statement"
+      },
+      {
+        "index": 26,
+        "production_id": 210,
+        "text": "block_item_list -> block_item"
+      },
+      {
+        "index": 27,
+        "production_id": 209,
+        "text": "compound_statement -> '{' block_item_list '}'"
+      },
+      {
+        "index": 28,
+        "production_id": 235,
+        "text": "function_definition -> declaration_specifiers declarator compound_statement"
+      },
+      {
+        "index": 29,
+        "production_id": 232,
+        "text": "external_declaration -> function_definition"
+      },
+      {
+        "index": 30,
         "production_id": 230,
         "text": "translation_unit -> external_declaration"
       }

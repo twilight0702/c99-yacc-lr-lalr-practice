@@ -6,6 +6,8 @@
     </div>
     <nav class="nav-list">
       <RouterLink class="nav-item" to="/overview">总览</RouterLink>
+      <RouterLink class="nav-item" to="/step1">Step 1</RouterLink>
+      <RouterLink class="nav-item" to="/step2">Step 2</RouterLink>
       <RouterLink class="nav-item" to="/step3">Step 3</RouterLink>
       <RouterLink class="nav-item" to="/step4">Step 4</RouterLink>
       <RouterLink class="nav-item" to="/step5">Step 5</RouterLink>

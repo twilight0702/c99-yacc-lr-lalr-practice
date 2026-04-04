@@ -255,14 +255,17 @@ def normalize_first(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
     return result
 
 
-def normalize_goto(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+def normalize_goto(rows: List[Dict[str, str]], i0_targets: Dict[str, int] | None = None) -> List[Dict[str, object]]:
     result: List[Dict[str, object]] = []
+    i0_targets = i0_targets or {}
     for row in rows:
+        symbol_name = row.get("symbol_name", "")
         result.append(
             {
                 "symbol_id": int(row.get("symbol_id", "0")),
-                "symbol_name": row.get("symbol_name", ""),
+                "symbol_name": symbol_name,
                 "item_count": int(row.get("item_count", "0")),
+                "to_state": int(i0_targets.get(symbol_name, -1)),
             }
         )
     return result
@@ -418,12 +421,41 @@ def read_augmented_text(path: Path) -> str:
     return lines[1]
 
 
+def load_source_preview(repo_root: Path, source_rel_path: str, max_lines: int = 80) -> Dict[str, object]:
+    """
+    读取源语法文件预览（用于 Step1 轻量可视化）。
+    """
+    if not source_rel_path:
+        return {"source_exists": False, "total_lines": 0, "nonempty_lines": 0, "preview_lines": []}
+
+    source_path = (repo_root / source_rel_path).resolve()
+    if not source_path.exists():
+        return {"source_exists": False, "total_lines": 0, "nonempty_lines": 0, "preview_lines": []}
+
+    lines = source_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    preview = [{"line": i + 1, "text": line} for i, line in enumerate(lines[:max_lines])]
+    nonempty = sum(1 for x in lines if x.strip())
+    return {
+        "source_exists": True,
+        "total_lines": len(lines),
+        "nonempty_lines": nonempty,
+        "preview_lines": preview,
+    }
+
+
 def write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
+def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, object]:
+    step_dir = paths.artifacts_root / f"step{step}" / case_id
+    # Step1/2 允许从 Step3 回退构建，避免前端缺页。
+    if not step_dir.exists() and step in (1, 2):
+        fallback = paths.artifacts_root / "step3" / case_id
+        if fallback.exists():
+            step_dir = fallback
+
     summary = parse_key_values(step_dir / "summary.txt")
     analysis = parse_key_values(step_dir / "analysis" / "report.txt")
     source = summary.get("source", "")
@@ -436,6 +468,31 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
     }
 
     raw_dir = step_dir / "raw"
+
+    if step == 1:
+        symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
+        productions = parse_productions(raw_dir / "productions.txt")
+        payload["step1_overview"] = load_source_preview(paths.repo_root, source)
+        if symbols:
+            payload["symbols"] = symbols
+        if productions:
+            payload["productions"] = productions
+
+    if step == 2:
+        symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
+        productions = parse_productions(raw_dir / "productions.txt")
+        terminals = [s for s in symbols if s.get("kind") == "Terminal"]
+        nonterminals = [s for s in symbols if s.get("kind") == "NonTerminal"]
+        payload["grammar_model"] = {
+            "start_symbol": summary.get("start_symbol", ""),
+            "terminals": terminals,
+            "nonterminals": nonterminals,
+            "productions_count": len(productions),
+        }
+        if symbols:
+            payload["symbols"] = symbols
+        if productions:
+            payload["productions"] = productions
 
     # 为防止 step8/step9 体积过大导致前端卡死，按步骤最小化装载字段。
     # 各页面只读取本步骤核心字段，不再把前序步骤大对象累加进当前步骤。
@@ -459,10 +516,20 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
 
     if step == 6:
         lr1_items = parse_lr1_items(raw_dir / "lr1_i0_items.txt")
+        i0_targets: Dict[str, int] = {}
+        step7_raw_dir = paths.artifacts_root / "step7" / case_id / "raw"
+        for row in parse_tsv(step7_raw_dir / "lr1_transitions.tsv"):
+            from_state = int(row.get("from_state", "0"))
+            if from_state != 0:
+                continue
+            symbol_name = row.get("symbol_name", "")
+            if not symbol_name:
+                continue
+            i0_targets[symbol_name] = int(row.get("to_state", "-1"))
         payload["lr1_i0"] = {
             "kernel_items": lr1_items["kernel"],
             "closure_items": lr1_items["closure"],
-            "goto_edges": normalize_goto(parse_tsv(raw_dir / "lr1_i0_goto.tsv")),
+            "goto_edges": normalize_goto(parse_tsv(raw_dir / "lr1_i0_goto.tsv"), i0_targets),
             "goto_items": parse_goto_items(raw_dir / "lr1_i0_goto_items.txt"),
             "lookahead_notes": parse_notes(raw_dir / "lr1_lookahead_derivation.txt"),
         }
@@ -505,6 +572,8 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
     }
 
     step_titles = {
+        1: "输入文件与词法符号基线",
+        2: "文法模型初始化与合法性校验",
         3: "输入解析结果",
         4: "文法预处理与增广",
         5: "First 集计算",
@@ -517,8 +586,13 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
     for step in steps:
         step_dir = paths.artifacts_root / f"step{step}" / case_id
         if not step_dir.exists():
-            continue
-        payload = collect_step_payload(step_dir, step)
+            if step in (1, 2):
+                fallback = paths.artifacts_root / "step3" / case_id
+                if not fallback.exists():
+                    continue
+            else:
+                continue
+        payload = collect_step_payload(paths, case_id, step)
         step_name = f"step{step}"
         step_out = case_output_root / step_name / "data.json"
         write_json(step_out, payload)
@@ -551,7 +625,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="为 YACC 可视化页面准备 JSON 数据")
     parser.add_argument("--case", default="", help="仅处理指定 case_id，例如 c99")
     parser.add_argument(
-        "--steps", default="3,4,5,6,7,8,9", help="处理步骤列表，逗号分隔，默认 3,4,5,6,7,8,9"
+        "--steps", default="1,2,3,4,5,6,7,8,9", help="处理步骤列表，逗号分隔，默认 1,2,3,4,5,6,7,8,9"
     )
     parser.add_argument(
         "--artifacts-root", default="artifacts/yacc", help="YACC 原始产物目录"

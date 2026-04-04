@@ -1212,187 +1212,224 @@
       {
         "symbol_id": 4,
         "symbol_name": "EXTERN",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 1
       },
       {
         "symbol_id": 7,
         "symbol_name": "CHAR",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 2
       },
       {
         "symbol_id": 8,
         "symbol_name": "BOOL",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 3
       },
       {
         "symbol_id": 10,
         "symbol_name": "IMAGINARY",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 4
       },
       {
         "symbol_id": 11,
         "symbol_name": "STATIC",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 5
       },
       {
         "symbol_id": 16,
         "symbol_name": "FLOAT",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 6
       },
       {
         "symbol_id": 19,
         "symbol_name": "SIGNED",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 7
       },
       {
         "symbol_id": 28,
         "symbol_name": "TYPE_NAME",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 8
       },
       {
         "symbol_id": 31,
         "symbol_name": "CONST",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 9
       },
       {
         "symbol_id": 37,
         "symbol_name": "AUTO",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 10
       },
       {
         "symbol_id": 38,
         "symbol_name": "REGISTER",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 11
       },
       {
         "symbol_id": 39,
         "symbol_name": "INLINE",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 12
       },
       {
         "symbol_id": 41,
         "symbol_name": "VOID",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 13
       },
       {
         "symbol_id": 42,
         "symbol_name": "RESTRICT",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 14
       },
       {
         "symbol_id": 44,
         "symbol_name": "INT",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 15
       },
       {
         "symbol_id": 45,
         "symbol_name": "LONG",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 16
       },
       {
         "symbol_id": 46,
         "symbol_name": "SHORT",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 17
       },
       {
         "symbol_id": 47,
         "symbol_name": "DOUBLE",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 18
       },
       {
         "symbol_id": 49,
         "symbol_name": "VOLATILE",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 19
       },
       {
         "symbol_id": 51,
         "symbol_name": "COMPLEX",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 20
       },
       {
         "symbol_id": 52,
         "symbol_name": "TYPEDEF",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 21
       },
       {
         "symbol_id": 53,
         "symbol_name": "UNSIGNED",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 22
       },
       {
         "symbol_id": 54,
         "symbol_name": "STRUCT",
-        "item_count": 2
+        "item_count": 2,
+        "to_state": 23
       },
       {
         "symbol_id": 55,
         "symbol_name": "ENUM",
-        "item_count": 145
+        "item_count": 145,
+        "to_state": 24
       },
       {
         "symbol_id": 59,
         "symbol_name": "UNION",
-        "item_count": 2
+        "item_count": 2,
+        "to_state": 25
       },
       {
         "symbol_id": 64,
         "symbol_name": "external_declaration",
-        "item_count": 26
+        "item_count": 26,
+        "to_state": 26
       },
       {
         "symbol_id": 65,
         "symbol_name": "translation_unit",
-        "item_count": 1147
+        "item_count": 1147,
+        "to_state": 27
       },
       {
         "symbol_id": 70,
         "symbol_name": "struct_or_union_specifier",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 28
       },
       {
         "symbol_id": 71,
         "symbol_name": "declaration_specifiers",
-        "item_count": 581
+        "item_count": 581,
+        "to_state": 29
       },
       {
         "symbol_id": 72,
         "symbol_name": "type_specifier",
-        "item_count": 972
+        "item_count": 972,
+        "to_state": 30
       },
       {
         "symbol_id": 74,
         "symbol_name": "struct_or_union",
-        "item_count": 87
+        "item_count": 87,
+        "to_state": 31
       },
       {
         "symbol_id": 89,
         "symbol_name": "type_qualifier",
-        "item_count": 972
+        "item_count": 972,
+        "to_state": 32
       },
       {
         "symbol_id": 90,
         "symbol_name": "declaration",
-        "item_count": 26
+        "item_count": 26,
+        "to_state": 33
       },
       {
         "symbol_id": 97,
         "symbol_name": "function_definition",
-        "item_count": 26
+        "item_count": 26,
+        "to_state": 34
       },
       {
         "symbol_id": 98,
         "symbol_name": "enum_specifier",
-        "item_count": 29
+        "item_count": 29,
+        "to_state": 35
       },
       {
         "symbol_id": 108,
         "symbol_name": "storage_class_specifier",
-        "item_count": 972
+        "item_count": 972,
+        "to_state": 36
       },
       {
         "symbol_id": 119,
         "symbol_name": "function_specifier",
-        "item_count": 972
+        "item_count": 972,
+        "to_state": 37
       }
     ],
     "goto_items": {

@@ -54,6 +54,7 @@ export interface StepData {
       symbol_id: number;
       symbol_name: string;
       item_count: number;
+      to_state: number;
     }>;
     goto_items: Record<string, string[]>;
     lookahead_notes: string[];
@@ -135,5 +136,20 @@ export interface StepData {
       text: string;
     }>;
     error: Record<string, string>;
+  };
+  step1_overview?: {
+    source_exists: boolean;
+    total_lines: number;
+    nonempty_lines: number;
+    preview_lines: Array<{
+      line: number;
+      text: string;
+    }>;
+  };
+  grammar_model?: {
+    start_symbol: string;
+    terminals: SymbolRow[];
+    nonterminals: SymbolRow[];
+    productions_count: number;
   };
 }

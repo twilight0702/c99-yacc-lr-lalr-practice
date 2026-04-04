@@ -21,6 +21,7 @@ const props = defineProps<{
   title: string;
   fileName: string;
   elements: ElementDefinition[];
+  layoutOptions?: Record<string, unknown>;
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -72,7 +73,8 @@ function init() {
       name: "cose",
       animate: false,
       fit: true,
-      padding: 28
+      padding: 28,
+      ...props.layoutOptions
     },
     wheelSensitivity: 0.2
   });

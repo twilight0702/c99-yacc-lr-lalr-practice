@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import OverviewPage from "./views/OverviewPage.vue";
+import Step1Page from "./views/Step1Page.vue";
+import Step2Page from "./views/Step2Page.vue";
 import Step3Page from "./views/Step3Page.vue";
 import Step4Page from "./views/Step4Page.vue";
 import Step5Page from "./views/Step5Page.vue";
@@ -13,6 +15,8 @@ export const router = createRouter({
   routes: [
     { path: "/", redirect: "/overview" },
     { path: "/overview", component: OverviewPage },
+    { path: "/step1", component: Step1Page },
+    { path: "/step2", component: Step2Page },
     { path: "/step3", component: Step3Page },
     { path: "/step4", component: Step4Page },
     { path: "/step5", component: Step5Page },
