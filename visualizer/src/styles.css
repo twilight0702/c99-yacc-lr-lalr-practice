@@ -173,6 +173,10 @@ body {
   font-size: 15px;
 }
 
+.panel-body {
+  padding: 12px 14px;
+}
+
 .chart-container {
   height: 360px;
 }
@@ -266,6 +270,10 @@ body {
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
   color: #0f172a;
+}
+
+.preline {
+  white-space: pre-line;
 }
 
 .error-box {

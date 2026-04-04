@@ -20,22 +20,42 @@
         <header class="panel-header">
           <h3>增广文法</h3>
         </header>
-        <p class="mono-line">{{ data.augmented?.production || "无" }}</p>
+        <div class="panel-body">
+          <p class="mono-line">{{ data.augmented?.production || "无" }}</p>
+        </div>
       </section>
 
-      <CytoPanel
-        title="LHS 到产生式索引图（可拖拽/缩放）"
-        file-name="step4_lhs_prod_graph.png"
-        :elements="graphElements"
-      />
+      <section class="panel">
+        <header class="panel-header">
+          <h3>LHS 到产生式索引明细</h3>
+        </header>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>lhs_id</th>
+                <th>lhs_name</th>
+                <th>production_ids</th>
+                <th>productions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in data.prod_index_by_lhs ?? []" :key="row.lhs_id">
+                <td>{{ row.lhs_id }}</td>
+                <td>{{ row.lhs_name }}</td>
+                <td>{{ row.production_ids.join(", ") }}</td>
+                <td class="preline">{{ formatProductions(row.production_ids) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import type { ElementDefinition } from "cytoscape";
 import { computed, onMounted } from "vue";
-import CytoPanel from "../components/CytoPanel.vue";
 import MetricCard from "../components/MetricCard.vue";
 import { useYaccStore } from "../stores/yacc";
 import { downloadJsonFile } from "../utils/data";
@@ -43,46 +63,20 @@ import { downloadJsonFile } from "../utils/data";
 const store = useYaccStore();
 const data = computed(() => store.stepData[4]);
 
-function shortProdText(text: string): string {
-  const max = 42;
-  return text.length > max ? `${text.slice(0, max)}...` : text;
-}
-
-const graphElements = computed<ElementDefinition[]>(() => {
-  const elements: ElementDefinition[] = [];
-  const indexRows = data.value?.prod_index_by_lhs ?? [];
-  const prodMap = new Map((data.value?.productions ?? []).map((p) => [p.id, p]));
-  for (const row of indexRows) {
-    const lhsNodeId = `lhs-${row.lhs_id}`;
-    elements.push({
-      data: {
-        id: lhsNodeId,
-        label: `${row.lhs_name}\n(${row.production_ids.length})`
+function formatProductions(ids: number[]): string {
+  const list = data.value?.productions ?? [];
+  const prodMap = new Map(list.map((p) => [p.id, p]));
+  return ids
+    .map((id) => {
+      const p = prodMap.get(id);
+      if (!p) {
+        return `#${id}: ?`;
       }
-    });
-    for (const pid of row.production_ids) {
-      const prodNodeId = `prod-${pid}`;
-      const prod = prodMap.get(pid);
-      const rhsText = prod ? (prod.rhs.length ? prod.rhs.join(" ") : "epsilon") : "?";
-      const fullLabel = prod ? `${prod.lhs} -> ${rhsText}` : `#${pid}`;
-      elements.push({
-        data: {
-          id: prodNodeId,
-          label: `${shortProdText(fullLabel)}\n(#${pid})`
-        }
-      });
-      elements.push({
-        data: {
-          id: `${lhsNodeId}->${prodNodeId}`,
-          source: lhsNodeId,
-          target: prodNodeId,
-          label: "index"
-        }
-      });
-    }
-  }
-  return elements;
-});
+      const rhs = p.rhs.length > 0 ? p.rhs.join(" ") : "epsilon";
+      return `#${id}: ${p.lhs} -> ${rhs}`;
+    })
+    .join("\n");
+}
 
 function exportJson() {
   if (!data.value) {
