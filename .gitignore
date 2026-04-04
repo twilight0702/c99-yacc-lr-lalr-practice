@@ -3,5 +3,5 @@ docs/
 build/
 artifacts/
 tests/out/
-__pycache__/
+tests/scripts/__pycache__
 *.pyc
