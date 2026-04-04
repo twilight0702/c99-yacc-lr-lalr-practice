@@ -5,7 +5,7 @@
 设计目标：
 1. 与 /src 完全解耦（只读 artifacts 文件）。
 2. 输出稳定版本化结构 visualizer/public/data/v1/<case_id>/。
-3. 兼容 step3~step6 当前产物。
+3. 兼容 step3~step7 当前产物。
 """
 
 from __future__ import annotations
@@ -145,6 +145,27 @@ def parse_notes(path: Path) -> List[str]:
     return notes
 
 
+def parse_state_items(path: Path) -> Dict[str, List[str]]:
+    result: Dict[str, List[str]] = {}
+    current_state = ""
+    if not path.exists():
+        return result
+
+    header_re = re.compile(r"^\[state\s+(\d+)\]$")
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = header_re.match(line)
+        if m:
+            current_state = m.group(1)
+            result[current_state] = []
+            continue
+        if current_state:
+            result[current_state].append(line)
+    return result
+
+
 def normalize_symbols(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
     result: List[Dict[str, object]] = []
     for row in rows:
@@ -203,6 +224,46 @@ def normalize_goto(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
     return result
 
 
+def normalize_lr1_states(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "state_id": int(row.get("state_id", "0")),
+                "item_count": int(row.get("item_count", "0")),
+            }
+        )
+    return result
+
+
+def normalize_lr1_transitions(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "from_state": int(row.get("from_state", "0")),
+                "symbol_id": int(row.get("symbol_id", "0")),
+                "symbol_name": row.get("symbol_name", ""),
+                "to_state": int(row.get("to_state", "0")),
+            }
+        )
+    return result
+
+
+def normalize_predecessors(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        pred_text = row.get("predecessors", "").strip()
+        predecessors = [x for x in pred_text.split(",") if x] if pred_text else []
+        result.append(
+            {
+                "state_id": int(row.get("state_id", "0")),
+                "predecessors": predecessors,
+            }
+        )
+    return result
+
+
 def read_augmented_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -255,6 +316,13 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
             "goto_items": parse_goto_items(raw_dir / "lr1_i0_goto_items.txt"),
             "lookahead_notes": parse_notes(raw_dir / "lr1_lookahead_derivation.txt"),
         }
+    if step >= 7:
+        payload["lr1_canonical"] = {
+            "states": normalize_lr1_states(parse_tsv(raw_dir / "lr1_states.tsv")),
+            "state_items": parse_state_items(raw_dir / "lr1_state_items.txt"),
+            "transitions": normalize_lr1_transitions(parse_tsv(raw_dir / "lr1_transitions.tsv")),
+            "predecessors": normalize_predecessors(parse_tsv(raw_dir / "lr1_predecessors.tsv")),
+        }
     return payload
 
 
@@ -275,6 +343,7 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
         4: "文法预处理与增广",
         5: "First 集计算",
         6: "LR(1) I0 闭包与 Goto",
+        7: "LR(1) 规范族与状态转移图",
     }
 
     for step in steps:
@@ -314,7 +383,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="为 YACC 可视化页面准备 JSON 数据")
     parser.add_argument("--case", default="", help="仅处理指定 case_id，例如 c99")
     parser.add_argument(
-        "--steps", default="3,4,5,6", help="处理步骤列表，逗号分隔，默认 3,4,5,6"
+        "--steps", default="3,4,5,6,7", help="处理步骤列表，逗号分隔，默认 3,4,5,6,7"
     )
     parser.add_argument(
         "--artifacts-root", default="artifacts/yacc", help="YACC 原始产物目录"

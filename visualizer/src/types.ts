@@ -58,4 +58,21 @@ export interface StepData {
     goto_items: Record<string, string[]>;
     lookahead_notes: string[];
   };
+  lr1_canonical?: {
+    states: Array<{
+      state_id: number;
+      item_count: number;
+    }>;
+    state_items: Record<string, string[]>;
+    transitions: Array<{
+      from_state: number;
+      symbol_id: number;
+      symbol_name: string;
+      to_state: number;
+    }>;
+    predecessors: Array<{
+      state_id: number;
+      predecessors: string[];
+    }>;
+  };
 }

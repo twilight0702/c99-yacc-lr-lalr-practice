@@ -190,6 +190,10 @@ body {
   max-height: 420px;
 }
 
+.transition-table-wrap {
+  max-height: 360px;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -202,6 +206,13 @@ body {
   padding: 8px 10px;
   text-align: left;
   vertical-align: top;
+}
+
+.truncate-cell {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .table th {

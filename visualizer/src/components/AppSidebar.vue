@@ -10,6 +10,7 @@
       <RouterLink class="nav-item" to="/step4">Step 4</RouterLink>
       <RouterLink class="nav-item" to="/step5">Step 5</RouterLink>
       <RouterLink class="nav-item" to="/step6">Step 6</RouterLink>
+      <RouterLink class="nav-item" to="/step7">Step 7</RouterLink>
     </nav>
   </aside>
 </template>
