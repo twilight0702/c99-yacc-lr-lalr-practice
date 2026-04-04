@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "yacc/model/grammar.h"
+#include "yacc/preprocess/grammar_preprocessor.h"
 
 namespace seu::yacc {
 
@@ -23,5 +24,11 @@ std::string make_default_export_dir(const std::string& input_path);
 void export_report(
     const Grammar& grammar, const GrammarAnalysis& analysis, const std::string& output_dir);
 
-}  // namespace seu::yacc
+// 第 4 步导出目录约定：artifacts/yacc/step4/<input_stem>/
+std::string make_default_step4_export_dir(const std::string& input_path);
 
+// 将第 4 步“文法预处理”结果导出。
+void export_step4_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const std::string& output_dir);
+
+}  // namespace seu::yacc

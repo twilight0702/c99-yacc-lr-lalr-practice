@@ -4,6 +4,7 @@
 
 #include "yacc/model/grammar.h"
 #include "yacc/parser/yacc_parser.h"
+#include "yacc/preprocess/grammar_preprocessor.h"
 #include "yacc/report/report_exporter.h"
 
 namespace {
@@ -97,6 +98,22 @@ bool validate_grammar(const seu::yacc::Grammar& grammar, std::string& error) {
     return true;
 }
 
+void print_preprocess_result(
+    const seu::yacc::Grammar& grammar, const seu::yacc::GrammarPreprocessReport& report) {
+    std::cout << "[第4步预处理] " << (report.passed ? "通过" : "失败") << '\n';
+    if (!grammar.productions.empty()) {
+        const auto& p0 = grammar.productions.front();
+        std::cout << "增广产生式: #" << p0.id << " " << grammar.symbols[p0.lhs_symbol_id].name << " ->";
+        for (int rhs_id : p0.rhs_symbol_ids) {
+            std::cout << " " << grammar.symbols[rhs_id].name;
+        }
+        std::cout << '\n';
+    }
+    if (!report.warnings.empty()) {
+        std::cout << "预处理告警数: " << report.warnings.size() << '\n';
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -141,8 +158,9 @@ int main(int argc, char** argv) {
     }
 
     try {
-        const seu::yacc::Grammar grammar = seu::yacc::parse_yacc_file(input_path);
+        seu::yacc::Grammar grammar = seu::yacc::parse_yacc_file(input_path);
         print_summary(grammar);
+        const seu::yacc::GrammarPreprocessReport preprocess_report = seu::yacc::preprocess_grammar(grammar);
         const seu::yacc::GrammarAnalysis analysis = seu::yacc::analyze_grammar(grammar);
 
         if (run_validate) {
@@ -153,9 +171,17 @@ int main(int argc, char** argv) {
                 std::cout << "[校验] 失败: " << validate_error << '\n';
                 return 3;
             }
+            if (!preprocess_report.passed) {
+                std::cout << "[第4步预处理] 失败\n";
+                for (const auto& e : preprocess_report.errors) {
+                    std::cout << "- " << e << '\n';
+                }
+                return 4;
+            }
         } else {
             std::cout << "[校验] 已跳过\n";
         }
+        print_preprocess_result(grammar, preprocess_report);
 
         if (dump_symbols) {
             print_symbols(grammar);
@@ -165,9 +191,9 @@ int main(int argc, char** argv) {
         }
         if (export_report) {
             if (export_dir.empty()) {
-                export_dir = seu::yacc::make_default_export_dir(input_path);
+                export_dir = seu::yacc::make_default_step4_export_dir(input_path);
             }
-            seu::yacc::export_report(grammar, analysis, export_dir);
+            seu::yacc::export_step4_report(grammar, analysis, preprocess_report, export_dir);
             std::cout << "[导出] 已写入: " << export_dir << '\n';
             std::cout << "[导出结构] summary.txt, raw/, analysis/\n";
         }

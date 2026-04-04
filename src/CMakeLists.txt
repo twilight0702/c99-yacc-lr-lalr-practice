@@ -1,6 +1,7 @@
 add_library(yacc_core
     yacc/model/grammar.cpp
     yacc/parser/yacc_parser.cpp
+    yacc/preprocess/grammar_preprocessor.cpp
     yacc/report/report_exporter.cpp
 )
 

@@ -2,8 +2,8 @@
 
 ## 文档状态
 
-- 版本：`v0.2`
-- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3` 步。
+- 版本：`v0.3`
+- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4` 步。
 - 依据文件：
 - `c99.y`
 - `docs/编译原理专题实践：全周期详细进度计划.md`
@@ -13,13 +13,14 @@
 
 ## 一、阶段目标（当前版本）
 
-本版本完成三件事：
+本版本完成四件事：
 
 1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
 2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
 3. 完成 Yacc 输入文件解析器实现（第 3 步）。
+4. 完成文法预处理与增广文法构造校验（第 4 步）。
 
-这三项完成后，后续可直接进入“First/LR 项目集算法实现”。
+这四项完成后，后续可直接进入“First/LR 项目集算法实现”。
 
 ---
 
@@ -274,13 +275,75 @@ artifacts/
 
 ---
 
-## 五、阶段结论与后续入口
+## 五、第 4 步交付：文法预处理与增广文法构造（已完成）
 
-当前文档已把第 1、2、3 步从“讨论状态”提升为“定稿 + 实现状态”。
+## 5.1 代码落地位置
 
-下一阶段直接从第 4 步开始实现：
+1. `src/yacc/preprocess/grammar_preprocessor.h`
+2. `src/yacc/preprocess/grammar_preprocessor.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 4 步执行流）
+4. `src/yacc/report/report_exporter.h`
+5. `src/yacc/report/report_exporter.cpp`（新增 step4 导出）
 
-1. 增广文法与 First 集算法实现。
+## 5.2 第 4 步已实现能力
+
+核心接口：
+
+```text
+GrammarPreprocessReport preprocess_grammar(Grammar& grammar);
+```
+
+已实现处理：
+
+1. 重建 `lhs -> 产生式ID列表` 索引，避免后续算法反复全表扫描。
+2. 校验增广产生式固定为 `#0`，并满足 `S' -> start_symbol`。
+3. 校验关键符号有效性：`start`、`S'`、`$`、`epsilon`。
+4. 校验产生式编号连续与符号 ID 边界合法。
+5. 检查“无产生式非终结符”（开始符号为硬错误，其余为告警）。
+6. 检查 RHS 显式 `epsilon` 使用（作为规范告警）。
+
+## 5.3 第 4 步结构化导出
+
+第 4 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step4/
+      <input_stem>/
+        summary.txt
+        raw/
+          symbols.tsv
+          productions.txt
+          augmented_grammar.txt
+          prod_index_by_lhs.tsv
+          user_subroutines.c
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y`
+2. `./build/src/yacc_parse_tool c99.y --export`
+
+验证结果（`c99.y`）：
+
+1. `preprocess_passed=true`
+2. `preprocess_errors_count=0`
+3. `preprocess_warnings_count=0`
+
+结论：第 4 步已完成。
+
+---
+
+## 六、阶段结论与后续入口
+
+当前文档已把第 1、2、3、4 步从“讨论状态”提升为“定稿 + 实现状态”。
+
+下一阶段直接从第 5 步开始实现：
+
+1. First 集算法实现（含符号串 First，用于 LR(1) lookahead）。
 2. LR(1) 项、Closure/Goto 和状态集构造。
 3. Action/Goto 表构造与冲突检测。
 
