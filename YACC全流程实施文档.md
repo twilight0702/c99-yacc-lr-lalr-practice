@@ -1,0 +1,200 @@
+# YACC 全流程实施文档
+
+## 文档状态
+
+- 版本：`v0.1`
+- 当前完成范围：仅完成 YACC 全流程中的第 `1`、`2` 步。
+- 依据文件：
+- `c99.y`
+- `docs/编译原理专题实践：全周期详细进度计划.md`
+- `docs/编译原理课程实践 2026.pptx`
+
+---
+
+## 一、阶段目标（当前版本）
+
+本版本只完成两件事：
+
+1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
+2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
+
+这两项完成后，后续可直接进入“输入文件解析器实现”和“First/LR 项目集算法实现”。
+
+---
+
+## 二、第 1 步交付：输入范围与支持边界（已完成）
+
+## 2.1 输入文件结构约定
+
+Yacc 输入文件采用三段结构：
+
+1. Definitions 区：第一个 `%%` 之前。
+2. Rules 区：两个 `%%` 之间。
+3. User Subroutines 区：第二个 `%%` 之后。
+
+`c99.y` 当前符合此结构。
+
+## 2.2 第一版必须支持的语法元素
+
+第一版解析器必须支持以下元素，且能正确解析 `c99.y`：
+
+1. `%token` 声明（同一行可多个 token）。
+2. `%start` 声明（单一开始符）。
+3. 规则段中的产生式定义：
+- 左部非终结符
+- `:`
+- 备选分支 `|`
+- 规则结束符 `;`
+4. 右部符号类型：
+- 命名 token（如 `IDENTIFIER`、`IF`）
+- 命名非终结符（如 `translation_unit`）
+- 单字符字面量终结符（如 `'('`、`';'`、`'+'`）
+5. 空白与换行分隔。
+6. User Subroutines 区按原文保留，不参与分析表构造。
+
+## 2.3 第一版不做的能力（明确边界）
+
+以下能力暂不作为第 1 版的必做项：
+
+1. `%left`、`%right`、`%nonassoc` 优先级与结合性声明。
+2. `%union`、`%type`、`%prec` 的完整语义支持。
+3. 规则中复杂 C 动作代码执行。
+4. include 链接、多文件语法拼接、条件编译。
+
+说明：`c99.y` 当前主要使用 `%token` 与 `%start`，因此以上边界不影响第一版完成“可解析并建模”。
+
+## 2.4 动作（Action）策略
+
+第一版动作策略定为“解析并保存，不执行”：
+
+1. 若规则无动作，存储为空动作。
+2. 若规则有 `{ ... }` 动作块，按原文字符串保存。
+3. 分析阶段不运行动作代码，只为后续语义阶段预留挂载点。
+
+## 2.5 第 1 步验收标准
+
+满足以下条件即判定第 1 步完成：
+
+1. 能说明支持项和不支持项（本节已固定）。
+2. 能明确回答“当前版本可以读取 `c99.y` 的哪一部分以及如何处理”。
+3. 后续开发不再反复讨论输入范围边界。
+
+结论：第 1 步已完成。
+
+---
+
+## 三、第 2 步交付：内部数据结构设计（已完成）
+
+## 3.1 设计原则
+
+1. 全链路复用：同一份结构要服务于解析、First、Closure/Goto、表构造、总控程序。
+2. 稳定编号：符号和产生式必须有稳定整数 ID，便于表索引。
+3. 可追踪：每条产生式保留来源行号，便于报错和调试。
+4. 可扩展：支持后续加入优先级、语义值类型、动作执行器。
+
+## 3.2 核心实体定义
+
+建议实现语言可为 C++/Java/Python，字段语义保持一致。
+
+```text
+enum SymbolKind {
+  TERMINAL,
+  NONTERMINAL,
+  SPECIAL
+}
+
+struct Symbol {
+  int id;                  // 全局唯一，稳定编号
+  string name;             // 符号名，如 IDENTIFIER / expression / '('
+  SymbolKind kind;         // 终结符 / 非终结符 / 特殊符号
+  bool is_literal_char;    // 是否为单字符字面量终结符
+}
+
+struct ActionBlock {
+  bool present;            // 该候选式是否有动作
+  string raw_code;         // 原始动作代码，不执行，仅保存
+}
+
+struct Production {
+  int id;                  // 产生式编号
+  int lhs_symbol_id;       // 左部非终结符
+  vector<int> rhs_symbol_ids; // 右部符号序列；空序列表示 epsilon
+  ActionBlock action;      // 语义动作占位
+  int source_line;         // 在 .y 文件中的起始行
+}
+
+struct Grammar {
+  string source_path;                  // 输入文件路径
+  int start_symbol_id;                 // %start 指定的符号
+  int augmented_start_symbol_id;       // 增广开始符号 S'
+  int eof_symbol_id;                   // 结束符 $
+  int epsilon_symbol_id;               // 内部 epsilon（可选）
+  vector<Symbol> symbols;              // 全部符号表
+  vector<int> terminal_ids;            // 终结符 ID 列表
+  vector<int> nonterminal_ids;         // 非终结符 ID 列表
+  vector<Production> productions;      // 全部产生式（含增广产生式）
+  unordered_map<string, int> symbol_id_by_name; // 名称到 ID
+  unordered_map<int, vector<int>> prod_ids_by_lhs; // lhs -> 产生式ID列表
+  string user_subroutines_raw;         // 第二个 %% 后原文
+}
+```
+
+## 3.3 必要辅助结构（为第 3-8 步预留）
+
+```text
+struct LR1Item {
+  int production_id;
+  int dot_pos;
+  int lookahead_symbol_id;
+}
+
+struct ParserTable {
+  // Action: (state, terminal) -> Shift/Reduce/Accept/Error
+  // Goto:   (state, nonterminal) -> next_state
+}
+```
+
+说明：第 2 步只定结构，不实现算法。
+
+## 3.4 编号与保留符号规则
+
+1. 先注册所有 `%token` 与规则中出现的字面量终结符。
+2. 再注册所有非终结符。
+3. 最后注册特殊符号：`$`、`epsilon`、`S'`。
+4. `Production.id` 按解析顺序递增；增广产生式固定放在第 `0` 条。
+
+## 3.5 解析阶段接口定义（第 3 步将实现）
+
+```text
+Grammar parseYaccFile(string path);
+```
+
+接口输入输出约定：
+
+1. 输入：`.y` 文件路径。
+2. 输出：填充完成的 `Grammar`。
+3. 错误：返回“行号 + 列号 + 附近文本 + 错误类型”。
+
+## 3.6 第 2 步验收标准
+
+满足以下条件即判定第 2 步完成：
+
+1. 已给出可编码的数据结构，非概念性描述。
+2. 覆盖了符号、产生式、动作、开始符号、索引映射。
+3. 可直接支撑 First、Closure/Goto、Action/Goto 表的后续实现。
+
+结论：第 2 步已完成。
+
+---
+
+## 四、阶段结论与后续入口
+
+当前文档已把第 1、2 步从“讨论状态”提升为“定稿状态”。
+
+下一阶段直接从第 3 步开始实现：
+
+1. 读取 `.y` 文件并切分三个 section。
+2. 落地 `parseYaccFile(path)`。
+3. 导出 `Grammar` 并做 `c99.y` 完整性校验（token 数、非终结符数、产生式数）。
+
+本文件将持续追加后续步骤，保持“YACC 全流程仅一份总文档”。
