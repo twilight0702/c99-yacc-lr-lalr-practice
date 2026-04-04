@@ -5,7 +5,7 @@
 设计目标：
 1. 与 /src 完全解耦（只读 artifacts 文件）。
 2. 输出稳定版本化结构 visualizer/public/data/v1/<case_id>/。
-3. 兼容 step3~step7 当前产物。
+3. 兼容 step3~step8 当前产物。
 """
 
 from __future__ import annotations
@@ -264,6 +264,70 @@ def normalize_predecessors(rows: List[Dict[str, str]]) -> List[Dict[str, object]
     return result
 
 
+def normalize_action_table(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "state_id": int(row.get("state_id", "0")),
+                "terminal_id": int(row.get("terminal_id", "0")),
+                "terminal_name": row.get("terminal_name", ""),
+                "action": row.get("action", ""),
+                "target": row.get("target", ""),
+            }
+        )
+    return result
+
+
+def normalize_goto_table(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "state_id": int(row.get("state_id", "0")),
+                "nonterminal_id": int(row.get("nonterminal_id", "0")),
+                "nonterminal_name": row.get("nonterminal_name", ""),
+                "to_state": int(row.get("to_state", "0")),
+            }
+        )
+    return result
+
+
+def normalize_parse_conflicts(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "state_id": int(row.get("state_id", "0")),
+                "symbol_id": int(row.get("symbol_id", "0")),
+                "symbol_name": row.get("symbol_name", ""),
+                "conflict_type": row.get("conflict_type", ""),
+                "existing_action": row.get("existing_action", ""),
+                "incoming_action": row.get("incoming_action", ""),
+                "related_items": row.get("related_items", ""),
+            }
+        )
+    return result
+
+
+def normalize_conflict_resolutions(rows: List[Dict[str, str]]) -> List[Dict[str, object]]:
+    result: List[Dict[str, object]] = []
+    for row in rows:
+        result.append(
+            {
+                "state_id": int(row.get("state_id", "0")),
+                "symbol_id": int(row.get("symbol_id", "0")),
+                "symbol_name": row.get("symbol_name", ""),
+                "conflict_type": row.get("conflict_type", ""),
+                "existing_action": row.get("existing_action", ""),
+                "incoming_action": row.get("incoming_action", ""),
+                "resolved_action": row.get("resolved_action", ""),
+                "reason": row.get("reason", ""),
+            }
+        )
+    return result
+
+
 def read_augmented_text(path: Path) -> str:
     if not path.exists():
         return ""
@@ -323,6 +387,15 @@ def collect_step_payload(step_dir: Path, step: int) -> Dict[str, object]:
             "transitions": normalize_lr1_transitions(parse_tsv(raw_dir / "lr1_transitions.tsv")),
             "predecessors": normalize_predecessors(parse_tsv(raw_dir / "lr1_predecessors.tsv")),
         }
+    if step >= 8:
+        payload["parse_table"] = {
+            "action_rows": normalize_action_table(parse_tsv(raw_dir / "action_table.tsv")),
+            "goto_rows": normalize_goto_table(parse_tsv(raw_dir / "goto_table.tsv")),
+            "conflicts": normalize_parse_conflicts(parse_tsv(raw_dir / "parse_table_conflicts.tsv")),
+            "conflict_resolutions": normalize_conflict_resolutions(
+                parse_tsv(raw_dir / "parse_table_conflict_resolution.tsv")
+            ),
+        }
     return payload
 
 
@@ -344,6 +417,7 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
         5: "First 集计算",
         6: "LR(1) I0 闭包与 Goto",
         7: "LR(1) 规范族与状态转移图",
+        8: "Action/Goto 分析表与冲突处理",
     }
 
     for step in steps:
@@ -383,7 +457,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="为 YACC 可视化页面准备 JSON 数据")
     parser.add_argument("--case", default="", help="仅处理指定 case_id，例如 c99")
     parser.add_argument(
-        "--steps", default="3,4,5,6,7", help="处理步骤列表，逗号分隔，默认 3,4,5,6,7"
+        "--steps", default="3,4,5,6,7,8", help="处理步骤列表，逗号分隔，默认 3,4,5,6,7,8"
     )
     parser.add_argument(
         "--artifacts-root", default="artifacts/yacc", help="YACC 原始产物目录"

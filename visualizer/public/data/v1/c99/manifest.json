@@ -1,7 +1,7 @@
 {
   "schema_version": "yacc-visualizer/v1",
   "case_id": "c99",
-  "generated_at": "2026-04-04T09:21:05.560565+00:00",
+  "generated_at": "2026-04-04T10:07:41.109627+00:00",
   "source": "c99.y",
   "steps": {
     "3": {
@@ -37,6 +37,13 @@
       "title": "LR(1) 规范族与状态转移图",
       "files": {
         "data": "step7/data.json"
+      }
+    },
+    "8": {
+      "step": 8,
+      "title": "Action/Goto 分析表与冲突处理",
+      "files": {
+        "data": "step8/data.json"
       }
     }
   }

@@ -75,4 +75,38 @@ export interface StepData {
       predecessors: string[];
     }>;
   };
+  parse_table?: {
+    action_rows: Array<{
+      state_id: number;
+      terminal_id: number;
+      terminal_name: string;
+      action: string;
+      target: string;
+    }>;
+    goto_rows: Array<{
+      state_id: number;
+      nonterminal_id: number;
+      nonterminal_name: string;
+      to_state: number;
+    }>;
+    conflicts: Array<{
+      state_id: number;
+      symbol_id: number;
+      symbol_name: string;
+      conflict_type: string;
+      existing_action: string;
+      incoming_action: string;
+      related_items: string;
+    }>;
+    conflict_resolutions: Array<{
+      state_id: number;
+      symbol_id: number;
+      symbol_name: string;
+      conflict_type: string;
+      existing_action: string;
+      incoming_action: string;
+      resolved_action: string;
+      reason: string;
+    }>;
+  };
 }
