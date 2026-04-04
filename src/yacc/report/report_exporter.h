@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "yacc/first/first_set.h"
+#include "yacc/lr1/lr1_items.h"
 #include "yacc/model/grammar.h"
 #include "yacc/preprocess/grammar_preprocessor.h"
 
@@ -39,5 +40,14 @@ std::string make_default_step5_export_dir(const std::string& input_path);
 void export_step5_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const std::string& output_dir);
+
+// 第 6 步导出目录约定：artifacts/yacc/step6/<input_stem>/
+std::string make_default_step6_export_dir(const std::string& input_path);
+
+// 将第 6 步 LR(1) 项、closure(I0)、goto(I0, X) 结果导出。
+void export_step6_report(const Grammar& grammar, const GrammarAnalysis& analysis,
+    const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
+    const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_result,
+    const LR1Step6ValidationReport& lr1_validation, const std::string& output_dir);
 
 }  // namespace seu::yacc

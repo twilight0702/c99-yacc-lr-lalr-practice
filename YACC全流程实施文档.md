@@ -2,8 +2,8 @@
 
 ## 文档状态
 
-- 版本：`v0.4`
-- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5` 步。
+- 版本：`v0.5`
+- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3`、`4`、`5`、`6` 步。
 - 依据文件：
 - `c99.y`
 - `docs/编译原理专题实践：全周期详细进度计划.md`
@@ -13,15 +13,16 @@
 
 ## 一、阶段目标（当前版本）
 
-本版本完成五件事：
+本版本完成六件事：
 
 1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
 2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
 3. 完成 Yacc 输入文件解析器实现（第 3 步）。
 4. 完成文法预处理与增广文法构造校验（第 4 步）。
 5. 完成 First 集与符号串 First 计算（第 5 步）。
+6. 完成 LR(1) 项、closure(I0)、goto(I0, X)（第 6 步）。
 
-这五项完成后，后续可直接进入“LR(1) 项目集算法实现”。
+这六项完成后，后续可直接进入“LR(1) 项目集规范族构造（全状态）”。
 
 ---
 
@@ -406,13 +407,84 @@ artifacts/
 
 ---
 
-## 七、阶段结论与后续入口
+## 七、第 6 步交付：LR(1) 项与闭包/Goto（已完成）
 
-当前文档已把第 1、2、3、4、5 步从“讨论状态”提升为“定稿 + 实现状态”。
+## 7.1 代码落地位置
 
-下一阶段直接从第 6 步开始实现：
+1. `src/yacc/lr1/lr1_items.h`
+2. `src/yacc/lr1/lr1_items.cpp`
+3. `src/tools/yacc_parse_main.cpp`（接入第 6 步执行流）
+4. `src/yacc/report/report_exporter.h`
+5. `src/yacc/report/report_exporter.cpp`（新增 step6 导出）
 
-1. LR(1) 项、Closure/Goto 和状态集构造。
+## 7.2 第 6 步已实现能力
+
+核心接口：
+
+```text
+LR1Step6Result build_step6_lr1_items(const Grammar& grammar,
+                                     const FirstSetResult& first_result);
+LR1Step6ValidationReport validate_step6_lr1_items(const Grammar& grammar,
+                                                  const FirstSetResult& first_result,
+                                                  const LR1Step6Result& result);
+std::string format_lr1_item(const Grammar& grammar, const LR1Item& item);
+```
+
+已实现处理：
+
+1. LR(1) 项结构：`production_id`、`dot_pos`、`lookahead_symbol_id`。
+2. `closure(I)`：按 `FIRST(beta+a)` 扩展非终结符项并去重。
+3. `goto(I, X)`：移点后再做闭包，结果可重复。
+4. 第 6 步校验：项合法性、闭包完备性、去重一致性。
+5. lookahead 来源说明记录，支持追溯“为什么出现该展望符”。
+
+## 7.3 第 6 步结构化导出
+
+第 6 步默认导出目录：
+
+```text
+artifacts/
+  yacc/
+    step6/
+      <input_stem>/
+        summary.txt
+        raw/
+          symbols.tsv
+          productions.txt
+          augmented_grammar.txt
+          prod_index_by_lhs.tsv
+          first_sets.tsv
+          first_sequence_examples.txt
+          lr1_i0_items.txt
+          lr1_i0_goto.tsv
+          lr1_i0_goto_items.txt
+          lr1_lookahead_derivation.txt
+          user_subroutines.c
+        analysis/
+          report.txt
+```
+
+命令：
+
+1. `./build/src/yacc_parse_tool c99.y`
+2. `./build/src/yacc_parse_tool c99.y --export`
+
+验收信号（`analysis/report.txt`）：
+
+1. `lr1_step6_validation_passed=true`
+2. `lr1_i0_closure_items` 与 `lr1_i0_goto_edges` 非零（对 `c99.y`）
+
+结论：第 6 步已完成。
+
+---
+
+## 八、阶段结论与后续入口
+
+当前文档已把第 1、2、3、4、5、6 步从“讨论状态”提升为“定稿 + 实现状态”。
+
+下一阶段直接从第 7 步开始实现：
+
+1. LR(1) 项目集规范族（全状态）与状态转移图。
 2. Action/Goto 表构造与冲突检测。
 3. LR 总控程序与词法接口联调。
 
