@@ -1,0 +1,182 @@
+#include <iostream>
+#include <string>
+#include <vector>
+
+#include "yacc/model/grammar.h"
+#include "yacc/parser/yacc_parser.h"
+#include "yacc/report/report_exporter.h"
+
+namespace {
+
+std::string symbol_kind_to_text(seu::yacc::SymbolKind kind) {
+    switch (kind) {
+        case seu::yacc::SymbolKind::Terminal:
+            return "Terminal";
+        case seu::yacc::SymbolKind::Nonterminal:
+            return "Nonterminal";
+        case seu::yacc::SymbolKind::Special:
+            return "Special";
+    }
+    return "Unknown";
+}
+
+void print_summary(const seu::yacc::Grammar& grammar) {
+    std::cout << "Yacc 文件解析成功\n";
+    std::cout << "源文件: " << grammar.source_path << '\n';
+    std::cout << "符号总数: " << grammar.symbols.size() << '\n';
+    std::cout << "终结符数: " << grammar.terminal_ids.size() << '\n';
+    std::cout << "非终结符数: " << grammar.nonterminal_ids.size() << '\n';
+    std::cout << "产生式数(含增广): " << grammar.productions.size() << '\n';
+
+    if (grammar.start_symbol_id >= 0 &&
+        grammar.start_symbol_id < static_cast<int>(grammar.symbols.size())) {
+        std::cout << "开始符号: " << grammar.symbols[grammar.start_symbol_id].name << '\n';
+    }
+}
+
+void print_symbols(const seu::yacc::Grammar& grammar) {
+    std::cout << "\n[符号表]\n";
+    for (const auto& sym : grammar.symbols) {
+        std::cout << "id=" << sym.id << ", name=" << sym.name
+                  << ", kind=" << symbol_kind_to_text(sym.kind)
+                  << ", literal=" << (sym.is_literal_char ? "yes" : "no") << '\n';
+    }
+}
+
+void print_productions(const seu::yacc::Grammar& grammar) {
+    std::cout << "\n[产生式表]\n";
+    for (const auto& p : grammar.productions) {
+        std::cout << "#" << p.id << " ";
+        std::cout << grammar.symbols[p.lhs_symbol_id].name << " ->";
+        if (p.rhs_symbol_ids.empty()) {
+            std::cout << " " << seu::yacc::kEpsilonSymbolName;
+        } else {
+            for (int rhs_id : p.rhs_symbol_ids) {
+                std::cout << " " << grammar.symbols[rhs_id].name;
+            }
+        }
+        std::cout << "    [line=" << p.source_line << "]";
+        if (p.action.present) {
+            std::cout << " [action=yes]";
+        }
+        std::cout << '\n';
+    }
+}
+
+// 结构完整性校验：用于确认解析结果可用于后续算法阶段。
+bool validate_grammar(const seu::yacc::Grammar& grammar, std::string& error) {
+    if (grammar.start_symbol_id < 0 || grammar.start_symbol_id >= static_cast<int>(grammar.symbols.size())) {
+        error = "start_symbol_id 非法";
+        return false;
+    }
+    if (grammar.productions.empty()) {
+        error = "产生式为空";
+        return false;
+    }
+    if (grammar.productions.front().id != 0) {
+        error = "增广产生式编号应为 0";
+        return false;
+    }
+    for (size_t i = 0; i < grammar.productions.size(); ++i) {
+        const auto& p = grammar.productions[i];
+        if (p.id != static_cast<int>(i)) {
+            error = "产生式编号不是连续递增";
+            return false;
+        }
+        if (p.lhs_symbol_id < 0 || p.lhs_symbol_id >= static_cast<int>(grammar.symbols.size())) {
+            error = "存在 lhs_symbol_id 越界";
+            return false;
+        }
+        for (int rhs_id : p.rhs_symbol_ids) {
+            if (rhs_id < 0 || rhs_id >= static_cast<int>(grammar.symbols.size())) {
+                error = "存在 rhs_symbol_id 越界";
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    std::string input_path = "c99.y";
+    bool dump_symbols = false;
+    bool dump_productions = false;
+    bool run_validate = true;
+    bool export_report = false;
+    std::string export_dir;
+
+    // 轻量参数解析：
+    // yacc_parse_tool [input.y] [--dump-symbols] [--dump-productions]
+    //                [--export] [--export-dir <dir>] [--no-validate]
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--dump-symbols") {
+            dump_symbols = true;
+            continue;
+        }
+        if (arg == "--dump-productions") {
+            dump_productions = true;
+            continue;
+        }
+        if (arg == "--no-validate") {
+            run_validate = false;
+            continue;
+        }
+        if (arg == "--export") {
+            export_report = true;
+            continue;
+        }
+        if (arg == "--export-dir") {
+            if (i + 1 >= argc) {
+                std::cerr << "--export-dir 缺少目录参数\n";
+                return 1;
+            }
+            export_report = true;
+            export_dir = argv[++i];
+            continue;
+        }
+        input_path = arg;
+    }
+
+    try {
+        const seu::yacc::Grammar grammar = seu::yacc::parse_yacc_file(input_path);
+        print_summary(grammar);
+        const seu::yacc::GrammarAnalysis analysis = seu::yacc::analyze_grammar(grammar);
+
+        if (run_validate) {
+            std::string validate_error;
+            if (validate_grammar(grammar, validate_error)) {
+                std::cout << "[校验] 通过\n";
+            } else {
+                std::cout << "[校验] 失败: " << validate_error << '\n';
+                return 3;
+            }
+        } else {
+            std::cout << "[校验] 已跳过\n";
+        }
+
+        if (dump_symbols) {
+            print_symbols(grammar);
+        }
+        if (dump_productions) {
+            print_productions(grammar);
+        }
+        if (export_report) {
+            if (export_dir.empty()) {
+                export_dir = seu::yacc::make_default_export_dir(input_path);
+            }
+            seu::yacc::export_report(grammar, analysis, export_dir);
+            std::cout << "[导出] 已写入: " << export_dir << '\n';
+            std::cout << "[导出结构] summary.txt, raw/, analysis/\n";
+        }
+        return 0;
+    } catch (const seu::yacc::ParseError& e) {
+        std::cerr << e.what() << '\n';
+        return 2;
+    } catch (const std::exception& e) {
+        std::cerr << "运行失败: " << e.what() << '\n';
+        return 1;
+    }
+}

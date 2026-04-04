@@ -2,8 +2,8 @@
 
 ## 文档状态
 
-- 版本：`v0.1`
-- 当前完成范围：仅完成 YACC 全流程中的第 `1`、`2` 步。
+- 版本：`v0.2`
+- 当前完成范围：已完成 YACC 全流程中的第 `1`、`2`、`3` 步。
 - 依据文件：
 - `c99.y`
 - `docs/编译原理专题实践：全周期详细进度计划.md`
@@ -13,12 +13,13 @@
 
 ## 一、阶段目标（当前版本）
 
-本版本只完成两件事：
+本版本完成三件事：
 
 1. 固化 Yacc 输入范围与第一版支持边界（第 1 步）。
 2. 固化 Yacc 核心内部数据结构设计（第 2 步）。
+3. 完成 Yacc 输入文件解析器实现（第 3 步）。
 
-这两项完成后，后续可直接进入“输入文件解析器实现”和“First/LR 项目集算法实现”。
+这三项完成后，后续可直接进入“First/LR 项目集算法实现”。
 
 ---
 
@@ -187,14 +188,100 @@ Grammar parseYaccFile(string path);
 
 ---
 
-## 四、阶段结论与后续入口
+## 四、第 3 步交付：Yacc 输入文件解析器实现（已完成）
 
-当前文档已把第 1、2 步从“讨论状态”提升为“定稿状态”。
+## 4.1 代码落地位置
 
-下一阶段直接从第 3 步开始实现：
+第 3 步实现使用 C++，代码放在 `/src` 下，按模块拆分：
 
-1. 读取 `.y` 文件并切分三个 section。
-2. 落地 `parseYaccFile(path)`。
-3. 导出 `Grammar` 并做 `c99.y` 完整性校验（token 数、非终结符数、产生式数）。
+1. `src/yacc/model/grammar.h`：文法核心结构定义。
+2. `src/yacc/parser/yacc_parser.h`：解析器接口与错误类型。
+3. `src/yacc/parser/yacc_parser.cpp`：解析器实现。
+4. `src/tools/yacc_parse_main.cpp`：命令行验证入口。
+5. `CMakeLists.txt` + `src/CMakeLists.txt`：构建配置。
+
+## 4.2 已实现能力
+
+解析器接口：
+
+```text
+Grammar parse_yacc_file(const std::string& path);
+```
+
+已实现功能：
+
+1. 读取 `.y` 文件并按两个 `%%` 切分三段。
+2. 解析 Definitions 段中的 `%token` 和 `%start`。
+3. 解析 Rules 段中的：
+- 产生式左部
+- `:`
+- `|`
+- `;`
+- 命名符号与字符字面量符号
+- 动作块 `{...}`（保存原文，不执行）
+4. 保留 User Subroutines 段原文到 `Grammar.user_subroutines_raw`。
+5. 构建增广产生式 `S' -> start_symbol`。
+6. 构建 `lhs -> 产生式ID列表` 索引。
+7. 提供带行列号的解析错误信息 `ParseError(line, column, message)`。
+8. 支持结构化导出与结果分析（见 4.5）。
+
+## 4.3 第一版边界在代码中的体现
+
+1. 支持 `%token`、`%start`。
+2. 暂不支持 `%left`/`%right`/`%union`/`%prec` 等高级特性。
+3. 遇到第一版未支持规则元素会在解析期报错，不静默忽略。
+
+## 4.4 第 3 步验收标准
+
+满足以下条件即判定第 3 步完成：
+
+1. 能成功解析 `c99.y` 并生成 `Grammar`。
+2. 可输出符号数、终结符数、非终结符数、产生式数。
+3. 规则语法错误可定位到行列号并给出错误信息。
+
+结论：第 3 步已完成。
+
+## 4.5 导出与分析（结构化防散落）
+
+为避免后续阶段输出文件散落，解析结果统一导出到目录树：
+
+```text
+artifacts/
+  yacc/
+    step3/
+      <input_stem>/
+        summary.txt
+        raw/
+          symbols.tsv
+          productions.txt
+          user_subroutines.c
+        analysis/
+          report.txt
+```
+
+命令行用法：
+
+1. 默认解析与校验：`./build/src/yacc_parse_tool c99.y`
+2. 导出到默认目录：`./build/src/yacc_parse_tool c99.y --export`
+3. 导出到自定义目录：`./build/src/yacc_parse_tool c99.y --export-dir artifacts/yacc/step3/c99_custom`
+4. 终端展示明细：`--dump-symbols`、`--dump-productions`
+
+当前分析项：
+
+1. `unused_terminals`：未在任何 RHS 中出现的终结符。
+2. `unreachable_nonterminals`：从开始符号不可达的非终结符。
+3. `productions_with_actions`：包含动作块的产生式数量。
+
+---
+
+## 五、阶段结论与后续入口
+
+当前文档已把第 1、2、3 步从“讨论状态”提升为“定稿 + 实现状态”。
+
+下一阶段直接从第 4 步开始实现：
+
+1. 增广文法与 First 集算法实现。
+2. LR(1) 项、Closure/Goto 和状态集构造。
+3. Action/Goto 表构造与冲突检测。
 
 本文件将持续追加后续步骤，保持“YACC 全流程仅一份总文档”。

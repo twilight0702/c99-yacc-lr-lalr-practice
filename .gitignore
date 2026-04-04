@@ -1,2 +1,4 @@
 .codex
 docs/
+build/
+artifacts/
