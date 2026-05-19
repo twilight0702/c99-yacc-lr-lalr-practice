@@ -67,6 +67,19 @@ bool is_valid_state_id(const std::vector<LR1State>& states, int state_id) {
     return state_id >= 0 && state_id < static_cast<int>(states.size());
 }
 
+bool is_valid_index(const std::vector<int>& values, int index) {
+    return index >= 0 && index < static_cast<int>(values.size());
+}
+
+std::unordered_map<int, const LR1State*> build_state_ptr_by_id(const std::vector<LR1State>& states) {
+    std::unordered_map<int, const LR1State*> by_id;
+    by_id.reserve(states.size() * 2 + 1);
+    for (const auto& state : states) {
+        by_id[state.state_id] = &state;
+    }
+    return by_id;
+}
+
 }  // namespace
 
 LR1Step10Result build_step10_lalr_from_lr1(
@@ -79,6 +92,8 @@ LR1Step10Result build_step10_lalr_from_lr1(
     if (lr1_step7_result.states.empty()) {
         return result;
     }
+
+    const auto lr1_state_by_id = build_state_ptr_by_id(lr1_step7_result.states);
 
     // 1) 先按 LR(0) 核分组。
     std::unordered_map<std::string, int> group_id_by_core;
@@ -140,11 +155,14 @@ LR1Step10Result build_step10_lalr_from_lr1(
         std::vector<LR1State> source_states;
         source_states.reserve(source_ids.size());
         for (int sid : source_ids) {
-            if (!is_valid_state_id(lr1_step7_result.states, sid)) {
+            auto it = lr1_state_by_id.find(sid);
+            if (it == lr1_state_by_id.end()) {
                 continue;
             }
-            source_states.push_back(lr1_step7_result.states[sid]);
-            result.lr1_to_lalr_state_id[sid] = static_cast<int>(new_gid);
+            source_states.push_back(*(it->second));
+            if (is_valid_state_id(lr1_step7_result.states, sid)) {
+                result.lr1_to_lalr_state_id[sid] = static_cast<int>(new_gid);
+            }
         }
 
         auto& group = result.merge_groups[new_gid];
@@ -164,8 +182,12 @@ LR1Step10Result build_step10_lalr_from_lr1(
     // 5) 组装 LALR 转移：把 LR(1) 边按映射投影后去重。
     std::set<std::tuple<int, int, int>> dedup_edges;
     for (const auto& edge : lr1_step7_result.transitions) {
-        if (!is_valid_state_id(lr1_step7_result.states, edge.from_state_id) ||
-            !is_valid_state_id(lr1_step7_result.states, edge.to_state_id)) {
+        if (lr1_state_by_id.find(edge.from_state_id) == lr1_state_by_id.end() ||
+            lr1_state_by_id.find(edge.to_state_id) == lr1_state_by_id.end()) {
+            continue;
+        }
+        if (!is_valid_index(result.lr1_to_lalr_state_id, edge.from_state_id) ||
+            !is_valid_index(result.lr1_to_lalr_state_id, edge.to_state_id)) {
             continue;
         }
         const int from_lalr = result.lr1_to_lalr_state_id[edge.from_state_id];

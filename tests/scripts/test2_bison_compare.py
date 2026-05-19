@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import json
 import pathlib
 import re
 import shutil
@@ -12,7 +14,11 @@ import sys
 import tempfile
 from typing import Sequence
 
-from _common import DEFAULT_CASES, parse_kv_file, run_cmd
+from _common import DEFAULT_CASES, run_cmd
+
+
+def log(level: str, message: str) -> None:
+    print(f"[{level}]{message}")
 
 
 def parse_token_names_from_grammar(grammar_path: pathlib.Path) -> list[str]:
@@ -128,14 +134,35 @@ def parse_bison_reduction_sequence(output: str) -> list[int]:
     return seq
 
 
-def parse_our_reduction_sequence(path: pathlib.Path) -> list[int]:
+def file_fingerprint(path: pathlib.Path) -> str:
+    st = path.stat()
+    return f"{path.resolve()}::{st.st_size}::{st.st_mtime_ns}"
+
+
+def stable_key(parts: Sequence[str]) -> str:
+    return hashlib.sha256("||".join(parts).encode("utf-8")).hexdigest()
+
+
+def parse_our_stdout_metrics(stdout: str) -> tuple[bool, bool, int, list[int]]:
+    m_cmp = re.search(r"lr1_accept=(true|false),\s*lalr_accept=(true|false)", stdout)
+    if not m_cmp:
+        raise RuntimeError("未在我方输出中找到 LR1/LALR 接受性对比行")
+    our_lr1_accept = m_cmp.group(1) == "true"
+    our_lalr_accept = m_cmp.group(2) == "true"
+
+    m_red = re.search(r"LR1 reductions=(\d+),\s*LALR reductions=(\d+)", stdout)
+    if not m_red:
+        raise RuntimeError("未在我方输出中找到规约次数行")
+    our_lalr_reductions = int(m_red.group(2))
+
+    m_seq = re.search(r"__YACC_LALR_REDUCTIONS__:(.*)", stdout)
+    if not m_seq:
+        raise RuntimeError("未在我方输出中找到机器可读规约序列")
+    seq_text = m_seq.group(1).strip()
     seq: list[int] = []
-    pattern = re.compile(r"^\s*\d+\.\s+#(\d+)\b")
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        m = pattern.match(raw)
-        if m:
-            seq.append(int(m.group(1)))
-    return seq
+    if seq_text:
+        seq = [int(x) for x in seq_text.split(",") if x]
+    return our_lr1_accept, our_lalr_accept, our_lalr_reductions, seq
 
 
 def main() -> int:
@@ -147,6 +174,7 @@ def main() -> int:
     parser.add_argument("--max-steps", type=int, default=200000, help="最大解析步数")
     parser.add_argument("--strict", action="store_true", help="严格模式（无 bison/gcc 时失败）")
     args = parser.parse_args()
+    log("INFO", "测试2开始：Bison 严格对拍")
 
     bison = shutil.which("bison")
     gcc = shutil.which("gcc") or shutil.which("cc")
@@ -161,6 +189,8 @@ def main() -> int:
     root = pathlib.Path(args.workdir).resolve()
     out_root = root / args.out_root
     out_root.mkdir(parents=True, exist_ok=True)
+    log("INFO", f"工作目录: {root}")
+    log("INFO", f"最大解析步数: {args.max_steps}")
 
     grammar_path = root / args.grammar
     token_names = parse_token_names_from_grammar(grammar_path)
@@ -168,13 +198,25 @@ def main() -> int:
         print("FAIL: 未从 grammar 提取到 %token 名称")
         return 1
 
-    with tempfile.TemporaryDirectory(prefix="yacc_test2_", dir=str(out_root)) as tmp:
-        tmp_dir = pathlib.Path(tmp)
-        parser_c = tmp_dir / "parser.tab.c"
-        parser_h = tmp_dir / "parser.tab.h"
-        driver_c = tmp_dir / "token_driver.c"
-        exe = tmp_dir / "bison_parser"
+    cache_root = out_root / ".cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    bison_build_key = stable_key(
+        [
+            file_fingerprint(grammar_path),
+            str(bison),
+            str(gcc),
+            hashlib.sha256(build_driver_c(token_names).encode("utf-8")).hexdigest(),
+        ]
+    )
+    bison_build_dir = cache_root / "bison_build" / bison_build_key
+    bison_build_dir.mkdir(parents=True, exist_ok=True)
+    parser_c = bison_build_dir / "parser.tab.c"
+    parser_h = bison_build_dir / "parser.tab.h"
+    driver_c = bison_build_dir / "token_driver.c"
+    exe = bison_build_dir / "bison_parser"
 
+    if not exe.exists():
+        log("INFO", "bison 基线缓存未命中，开始生成并编译 baseline parser")
         p1 = run_cmd([bison, "-d", "-t", "-o", str(parser_c), str(grammar_path)], cwd=root)
         if p1.returncode != 0:
             print(f"FAIL: bison 生成失败\n{p1.stderr}\n{p1.stdout}")
@@ -182,179 +224,249 @@ def main() -> int:
         if not parser_h.exists():
             print(f"FAIL: 未生成头文件: {parser_h}")
             return 1
-
         driver_c.write_text(build_driver_c(token_names), encoding="utf-8")
-        p2 = run_cmd([gcc, "-O2", "-std=c11", str(parser_c), str(driver_c), "-o", str(exe)], cwd=root)
+        p2 = run_cmd(
+            [
+                gcc,
+                "-O2",
+                "-std=c11",
+                "-Wno-error=implicit-function-declaration",
+                str(parser_c),
+                str(driver_c),
+                "-o",
+                str(exe),
+            ],
+            cwd=root,
+        )
         if p2.returncode != 0:
             print(f"FAIL: bison 基线编译失败\n{p2.stderr}\n{p2.stdout}")
             return 1
+        log("PASS", f"bison baseline 已生成: {exe}")
+    else:
+        log("INFO", "bison 基线缓存命中，复用已编译 parser")
 
-        messages: list[str] = []
-        report_rows: list[dict[str, str]] = []
-        for case in DEFAULT_CASES:
-            export_dir = out_root / f"{case.name}_our"
+    messages: list[str] = []
+    report_rows: list[dict[str, str]] = []
+    total_cases = len(DEFAULT_CASES)
+    for idx, case in enumerate(DEFAULT_CASES, start=1):
+        log("INFO", f"[{idx}/{total_cases}] case 开始: {case.name}")
+        case_out_dir = out_root / case.name
+        case_out_dir.mkdir(parents=True, exist_ok=True)
+
+        case_tokens_path = (root / case.tokens).resolve()
+        our_key = stable_key(
+            [
+                file_fingerprint((root / args.bin).resolve()),
+                file_fingerprint(grammar_path),
+                file_fingerprint(case_tokens_path),
+                str(args.max_steps),
+            ]
+        )
+        our_cache_file = cache_root / "our_case" / f"{our_key}.json"
+        our_cache_file.parent.mkdir(parents=True, exist_ok=True)
+        if our_cache_file.exists():
+            log("INFO", f"[{case.name}] 我方结果缓存命中")
+            our_data = json.loads(our_cache_file.read_text(encoding="utf-8"))
+        else:
+            log("INFO", f"[{case.name}] 我方结果缓存未命中，开始运行 yacc_parse_tool")
             p_our = run_cmd(
                 [
                     args.bin,
                     args.grammar,
                     "--parse-tokens",
                     case.tokens,
-                    "--export",
-                    "--export-dir",
-                    str(export_dir),
                     "--max-parse-steps",
                     str(args.max_steps),
+                    "--dump-lalr-reductions-machine",
                 ],
                 cwd=root,
             )
             if p_our.returncode != 0:
                 print(f"FAIL: {case.name} 运行本实现失败\n{p_our.stderr}\n{p_our.stdout}")
                 return 1
+            try:
+                our_lr1_accept, our_lalr_accept, our_lalr_reductions, our_seq = parse_our_stdout_metrics(p_our.stdout)
+            except Exception as e:
+                print(f"FAIL: {case.name} 解析我方输出失败: {e}\n{p_our.stdout}\n{p_our.stderr}")
+                return 1
+            our_data = {
+                "our_lr1_accept": our_lr1_accept,
+                "our_lalr_accept": our_lalr_accept,
+                "our_lalr_reductions": our_lalr_reductions,
+                "our_seq": our_seq,
+            }
+            our_cache_file.write_text(json.dumps(our_data, ensure_ascii=False), encoding="utf-8")
+            log("PASS", f"[{case.name}] 我方结果已写入缓存")
 
-            summary = parse_kv_file(export_dir / "summary.txt")
-            our_lr1_accept = summary.get("lr1_parse_accepted", "false").lower() == "true"
-            our_lalr_accept = summary.get("lalr_parse_accepted", "false").lower() == "true"
-            our_lalr_reductions = int(summary.get("lalr_parse_reductions", "0"))
-            our_seq = parse_our_reduction_sequence(export_dir / "raw" / "parse_reductions_lalr.txt")
+        our_lr1_accept = bool(our_data["our_lr1_accept"])
+        our_lalr_accept = bool(our_data["our_lalr_accept"])
+        our_lalr_reductions = int(our_data["our_lalr_reductions"])
+        our_seq = [int(x) for x in our_data["our_seq"]]
 
+        bison_key = stable_key(
+            [
+                bison_build_key,
+                file_fingerprint(case_tokens_path),
+            ]
+        )
+        bison_cache_file = cache_root / "bison_case" / f"{bison_key}.json"
+        bison_cache_file.parent.mkdir(parents=True, exist_ok=True)
+        if bison_cache_file.exists():
+            log("INFO", f"[{case.name}] bison 运行结果缓存命中")
+            bison_data = json.loads(bison_cache_file.read_text(encoding="utf-8"))
+            bison_output = str(bison_data["bison_output"])
+            bison_accept = bool(bison_data["bison_accept"])
+            bison_seq = [int(x) for x in bison_data["bison_seq"]]
+        else:
+            log("INFO", f"[{case.name}] bison 运行结果缓存未命中，开始运行 baseline parser")
             p_bison = run_cmd([str(exe), str(root / case.tokens)], cwd=root)
             bison_output = f"{p_bison.stdout}\n{p_bison.stderr}"
             bison_accept = p_bison.returncode == 0
             bison_seq = parse_bison_reduction_sequence(bison_output)
-            bison_reductions = len(bison_seq)
+            bison_data = {
+                "bison_output": bison_output,
+                "bison_accept": bison_accept,
+                "bison_seq": bison_seq,
+            }
+            bison_cache_file.write_text(json.dumps(bison_data, ensure_ascii=False), encoding="utf-8")
+            log("PASS", f"[{case.name}] bison 结果已写入缓存")
+        bison_reductions = len(bison_seq)
 
-            case_out_dir = out_root / case.name
-            case_out_dir.mkdir(parents=True, exist_ok=True)
-            (case_out_dir / "bison_debug.log").write_text(bison_output, encoding="utf-8")
-            (case_out_dir / "our_lalr_reductions.txt").write_text(
-                "\n".join(str(x) for x in our_seq) + ("\n" if our_seq else ""),
-                encoding="utf-8",
-            )
-            (case_out_dir / "bison_reductions.txt").write_text(
-                "\n".join(str(x) for x in bison_seq) + ("\n" if bison_seq else ""),
-                encoding="utf-8",
-            )
+        (case_out_dir / "bison_debug.log").write_text(bison_output, encoding="utf-8")
+        (case_out_dir / "our_lalr_reductions.txt").write_text(
+            "\n".join(str(x) for x in our_seq) + ("\n" if our_seq else ""),
+            encoding="utf-8",
+        )
+        (case_out_dir / "bison_reductions.txt").write_text(
+            "\n".join(str(x) for x in bison_seq) + ("\n" if bison_seq else ""),
+            encoding="utf-8",
+        )
 
-            if our_lalr_accept != bison_accept:
+        if our_lalr_accept != bison_accept:
+            print(
+                f"FAIL: {case.name} 接受性不一致: our_lalr={our_lalr_accept}, bison={bison_accept}\n"
+                f"{bison_output}"
+            )
+            return 1
+        if our_lr1_accept != case.expect_accept:
+            print(f"FAIL: {case.name} LR1 接受性与预期不一致: {our_lr1_accept}")
+            return 1
+        if our_lalr_reductions != bison_reductions:
+            if case.expect_accept:
                 print(
-                    f"FAIL: {case.name} 接受性不一致: our_lalr={our_lalr_accept}, bison={bison_accept}\n"
-                    f"{bison_output}"
+                    f"FAIL: {case.name} 规约次数不一致: our_lalr={our_lalr_reductions}, "
+                    f"bison={bison_reductions}\n{bison_output}"
                 )
                 return 1
-            if our_lr1_accept != case.expect_accept:
-                print(f"FAIL: {case.name} LR1 接受性与预期不一致: {our_lr1_accept}")
+        sequence_equal = our_seq == bison_seq
+        sequence_prefix_ok = bison_seq[: len(our_seq)] == our_seq
+        if case.expect_accept:
+            if not sequence_equal:
+                mismatch_pos = -1
+                limit = min(len(our_seq), len(bison_seq))
+                for i in range(limit):
+                    if our_seq[i] != bison_seq[i]:
+                        mismatch_pos = i
+                        break
+                if mismatch_pos < 0 and len(our_seq) != len(bison_seq):
+                    mismatch_pos = limit
+                print(
+                    f"FAIL: {case.name} 规约序列不一致: first_mismatch_index={mismatch_pos}, "
+                    f"our_len={len(our_seq)}, bison_len={len(bison_seq)}\n"
+                    f"详见: {case_out_dir / 'our_lalr_reductions.txt'} 与 {case_out_dir / 'bison_reductions.txt'}"
+                )
                 return 1
-            if our_lalr_reductions != bison_reductions:
-                if case.expect_accept:
-                    print(
-                        f"FAIL: {case.name} 规约次数不一致: our_lalr={our_lalr_reductions}, "
-                        f"bison={bison_reductions}\n{bison_output}"
-                    )
-                    return 1
-            sequence_equal = our_seq == bison_seq
-            sequence_prefix_ok = bison_seq[: len(our_seq)] == our_seq
-            if case.expect_accept:
-                if not sequence_equal:
-                    mismatch_pos = -1
-                    limit = min(len(our_seq), len(bison_seq))
-                    for i in range(limit):
-                        if our_seq[i] != bison_seq[i]:
-                            mismatch_pos = i
-                            break
-                    if mismatch_pos < 0 and len(our_seq) != len(bison_seq):
-                        mismatch_pos = limit
-                    print(
-                        f"FAIL: {case.name} 规约序列不一致: first_mismatch_index={mismatch_pos}, "
-                        f"our_len={len(our_seq)}, bison_len={len(bison_seq)}\n"
-                        f"详见: {case_out_dir / 'our_lalr_reductions.txt'} 与 {case_out_dir / 'bison_reductions.txt'}"
-                    )
-                    return 1
-            else:
-                # reject 用例中，bison 可能在报错前多做默认规约；要求我方序列是其前缀。
-                if not sequence_prefix_ok:
-                    mismatch_pos = -1
-                    limit = min(len(our_seq), len(bison_seq))
-                    for i in range(limit):
-                        if our_seq[i] != bison_seq[i]:
-                            mismatch_pos = i
-                            break
-                    if mismatch_pos < 0 and len(our_seq) > len(bison_seq):
-                        mismatch_pos = limit
-                    print(
-                        f"FAIL: {case.name} reject 前缀规约序列不一致: first_mismatch_index={mismatch_pos}, "
-                        f"our_len={len(our_seq)}, bison_len={len(bison_seq)}\n"
-                        f"详见: {case_out_dir / 'our_lalr_reductions.txt'} 与 {case_out_dir / 'bison_reductions.txt'}"
-                    )
-                    return 1
+        else:
+            # reject 用例中，bison 可能在报错前多做默认规约；要求我方序列是其前缀。
+            if not sequence_prefix_ok:
+                mismatch_pos = -1
+                limit = min(len(our_seq), len(bison_seq))
+                for i in range(limit):
+                    if our_seq[i] != bison_seq[i]:
+                        mismatch_pos = i
+                        break
+                if mismatch_pos < 0 and len(our_seq) > len(bison_seq):
+                    mismatch_pos = limit
+                print(
+                    f"FAIL: {case.name} reject 前缀规约序列不一致: first_mismatch_index={mismatch_pos}, "
+                    f"our_len={len(our_seq)}, bison_len={len(bison_seq)}\n"
+                    f"详见: {case_out_dir / 'our_lalr_reductions.txt'} 与 {case_out_dir / 'bison_reductions.txt'}"
+                )
+                return 1
 
-            messages.append(
-                f"{case.name}: accept={bison_accept}, reductions(lalr/bison)="
-                f"{our_lalr_reductions}/{bison_reductions}"
-            )
-            report_rows.append(
-                {
-                    "case": case.name,
-                    "expect_accept": "true" if case.expect_accept else "false",
-                    "our_lr1_accept": "true" if our_lr1_accept else "false",
-                    "our_lalr_accept": "true" if our_lalr_accept else "false",
-                    "bison_accept": "true" if bison_accept else "false",
-                    "our_lalr_reductions": str(our_lalr_reductions),
-                    "bison_reductions": str(bison_reductions),
-                    "reduction_sequence_equal": "true" if sequence_equal else "false",
-                    "reduction_sequence_prefix_ok": "true" if sequence_prefix_ok else "false",
-                    "bison_debug_log": str((case_out_dir / "bison_debug.log").relative_to(root)),
-                }
-            )
-
-        report_tsv = out_root / "compare_report.tsv"
-        with report_tsv.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=[
-                    "case",
-                    "expect_accept",
-                    "our_lr1_accept",
-                    "our_lalr_accept",
-                    "bison_accept",
-                    "our_lalr_reductions",
-                    "bison_reductions",
-                    "reduction_sequence_equal",
-                    "reduction_sequence_prefix_ok",
-                    "bison_debug_log",
-                ],
-                delimiter="\t",
-            )
-            writer.writeheader()
-            writer.writerows(report_rows)
-
-        report_md = out_root / "compare_report.md"
-        md_lines = [
-            "# 测试2 严格对拍报告",
-            "",
-            "| case | expect_accept | our_lr1_accept | our_lalr_accept | bison_accept | our_lalr_reductions | bison_reductions | reduction_sequence_equal | reduction_sequence_prefix_ok |",
-            "|---|---|---|---|---|---:|---:|---|",
-        ]
-        for row in report_rows:
-            md_lines.append(
-                f"| {row['case']} | {row['expect_accept']} | {row['our_lr1_accept']} | "
-                f"{row['our_lalr_accept']} | {row['bison_accept']} | {row['our_lalr_reductions']} | "
-                f"{row['bison_reductions']} | {row['reduction_sequence_equal']} | "
-                f"{row['reduction_sequence_prefix_ok']} |"
-            )
-        md_lines.extend(
-            [
-                "",
-                f"- TSV 明细: `{report_tsv.relative_to(root)}`",
-                "- 每个 case 的 `bison_debug.log`、`our_lalr_reductions.txt`、`bison_reductions.txt` 在 `tests/out/test2/<case>/`",
-            ]
+        messages.append(
+            f"{case.name}: accept={bison_accept}, reductions(lalr/bison)="
+            f"{our_lalr_reductions}/{bison_reductions}"
         )
-        report_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+        log(
+            "PASS",
+            f"[{case.name}] 对拍通过: accept={bison_accept}, "
+            f"reductions(lalr/bison)={our_lalr_reductions}/{bison_reductions}",
+        )
+        report_rows.append(
+            {
+                "case": case.name,
+                "expect_accept": "true" if case.expect_accept else "false",
+                "our_lr1_accept": "true" if our_lr1_accept else "false",
+                "our_lalr_accept": "true" if our_lalr_accept else "false",
+                "bison_accept": "true" if bison_accept else "false",
+                "our_lalr_reductions": str(our_lalr_reductions),
+                "bison_reductions": str(bison_reductions),
+                "reduction_sequence_equal": "true" if sequence_equal else "false",
+                "reduction_sequence_prefix_ok": "true" if sequence_prefix_ok else "false",
+                "bison_debug_log": str((case_out_dir / "bison_debug.log").relative_to(root)),
+            }
+        )
 
-    print("PASS: 测试2通过（Bison 严格对拍一致）")
+    report_tsv = out_root / "compare_report.tsv"
+    with report_tsv.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "case",
+                "expect_accept",
+                "our_lr1_accept",
+                "our_lalr_accept",
+                "bison_accept",
+                "our_lalr_reductions",
+                "bison_reductions",
+                "reduction_sequence_equal",
+                "reduction_sequence_prefix_ok",
+                "bison_debug_log",
+            ],
+            delimiter="\t",
+        )
+        writer.writeheader()
+        writer.writerows(report_rows)
+
+    report_md = out_root / "compare_report.md"
+    md_lines = [
+        "# 测试2 严格对拍报告",
+        "",
+        "| case | expect_accept | our_lr1_accept | our_lalr_accept | bison_accept | our_lalr_reductions | bison_reductions | reduction_sequence_equal | reduction_sequence_prefix_ok |",
+        "|---|---|---|---|---|---:|---:|---|",
+    ]
+    for row in report_rows:
+        md_lines.append(
+            f"| {row['case']} | {row['expect_accept']} | {row['our_lr1_accept']} | "
+            f"{row['our_lalr_accept']} | {row['bison_accept']} | {row['our_lalr_reductions']} | "
+            f"{row['bison_reductions']} | {row['reduction_sequence_equal']} | "
+            f"{row['reduction_sequence_prefix_ok']} |"
+        )
+    md_lines.extend(
+        [
+            "",
+            f"- TSV 明细: `{report_tsv.relative_to(root)}`",
+            "- 每个 case 的 `bison_debug.log`、`our_lalr_reductions.txt`、`bison_reductions.txt` 在 `tests/out/test2/<case>/`",
+        ]
+    )
+    report_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+
+    log("PASS", "测试2通过（Bison 严格对拍一致）")
     for m in messages:
         print(f"  - {m}")
-    print(f"  - report: {out_root / 'compare_report.tsv'}")
-    print(f"  - report: {out_root / 'compare_report.md'}")
+    log("INFO", "  - report: {out_root / 'compare_report.tsv'}")
+    log("INFO", "  - report: {out_root / 'compare_report.md'}")
     return 0
 
 

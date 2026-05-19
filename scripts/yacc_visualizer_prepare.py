@@ -30,6 +30,34 @@ class Paths:
     output_root: Path
 
 
+def resolve_step_dir(paths: Paths, case_id: str, step: int) -> Path | None:
+    """
+    解析某一步应读取的 artifacts 目录。
+
+    优先使用 stepN/<case>；若不存在，回退到更高步骤目录（如 step10 的聚合导出），
+    以兼容 "--export 只产出单一步目录" 的当前 CLI 行为。
+    """
+    preferred = paths.artifacts_root / f"step{step}" / case_id
+    if preferred.exists():
+        return preferred
+
+    # step1/2 历史数据兼容：优先尝试 step3。
+    if step in (1, 2):
+        step3 = paths.artifacts_root / "step3" / case_id
+        if step3.exists():
+            return step3
+
+    # 通用回退：优先读高步骤聚合目录，再退到低步骤。
+    # 常见场景：仅存在 step10/<case> 或 step9/<case>。
+    candidates = list(range(10, step, -1)) + list(range(step - 1, 0, -1))
+    for s in candidates:
+        p = paths.artifacts_root / f"step{s}" / case_id
+        if p.exists():
+            return p
+
+    return None
+
+
 def parse_key_values(path: Path) -> Dict[str, str]:
     result: Dict[str, str] = {}
     if not path.exists():
@@ -87,6 +115,14 @@ def parse_productions(path: Path) -> List[Dict[str, object]]:
             }
         )
     return result
+
+
+def strip_augmented_productions(rows: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    return [row for row in rows if int(row.get("id", -1)) != 0 and str(row.get("lhs", "")) != "S'"]
+
+
+def strip_augmented_symbols(rows: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    return [row for row in rows if str(row.get("name", "")) != "S'"]
 
 
 def parse_lr1_items(path: Path) -> Dict[str, List[str]]:
@@ -470,18 +506,89 @@ def load_source_preview(repo_root: Path, source_rel_path: str, max_lines: int = 
     }
 
 
+def build_input_spec_checks(repo_root: Path, source_rel_path: str) -> List[Dict[str, object]]:
+    checks: List[Dict[str, object]] = []
+    if not source_rel_path:
+        return [{"id": "source_path_present", "label": "source 路径存在", "status": "fail", "detail": "summary.source 为空"}]
+    source_path = (repo_root / source_rel_path).resolve()
+    if not source_path.exists():
+        return [{
+            "id": "source_file_exists",
+            "label": "源文件可读取",
+            "status": "fail",
+            "detail": f"未找到文件: {source_rel_path}",
+        }]
+
+    text = source_path.read_text(encoding="utf-8", errors="ignore")
+    lines = text.splitlines()
+    sep_lines = [idx + 1 for idx, line in enumerate(lines) if line.strip() == "%%"]
+    checks.append({
+        "id": "segment_markers",
+        "label": "三段结构分隔符(%%)数量",
+        "status": "pass" if len(sep_lines) >= 2 else "fail",
+        "detail": f"找到 {len(sep_lines)} 处，行号: {sep_lines[:6]}",
+    })
+
+    defs_text = text
+    rules_text = ""
+    user_text = ""
+    if len(sep_lines) >= 2:
+        a = sep_lines[0] - 1
+        b = sep_lines[1] - 1
+        defs_text = "\n".join(lines[:a])
+        rules_text = "\n".join(lines[a + 1:b])
+        user_text = "\n".join(lines[b + 1:])
+
+    start_lines = [idx + 1 for idx, line in enumerate(lines) if line.strip().startswith("%start")]
+    checks.append({
+        "id": "start_decl",
+        "label": "%start 声明",
+        "status": "pass" if len(start_lines) == 1 else ("warn" if len(start_lines) > 1 else "fail"),
+        "detail": f"数量={len(start_lines)}，行号: {start_lines[:6]}",
+    })
+
+    unsupported = []
+    unsupported_keys = ("%left", "%right", "%nonassoc", "%union", "%type", "%prec")
+    for idx, line in enumerate(lines):
+        s = line.strip()
+        for key in unsupported_keys:
+            if s.startswith(key):
+                unsupported.append(f"{key}@L{idx+1}")
+                break
+    checks.append({
+        "id": "unsupported_directives",
+        "label": "未支持指令扫描",
+        "status": "warn" if unsupported else "pass",
+        "detail": "无" if not unsupported else ", ".join(unsupported[:20]),
+    })
+
+    has_rules = bool(rules_text.strip())
+    checks.append({
+        "id": "rules_section_nonempty",
+        "label": "Rules 区非空",
+        "status": "pass" if has_rules else "fail",
+        "detail": "rules 区存在内容" if has_rules else "rules 区为空",
+    })
+
+    has_user = bool(user_text.strip())
+    checks.append({
+        "id": "user_subroutines_section",
+        "label": "User Subroutines 区",
+        "status": "pass" if has_user else "warn",
+        "detail": "存在用户代码区" if has_user else "为空（可接受）",
+    })
+    return checks
+
+
 def write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, object]:
-    step_dir = paths.artifacts_root / f"step{step}" / case_id
-    # Step1/2 允许从 Step3 回退构建，避免前端缺页。
-    if not step_dir.exists() and step in (1, 2):
-        fallback = paths.artifacts_root / "step3" / case_id
-        if fallback.exists():
-            step_dir = fallback
+    step_dir = resolve_step_dir(paths, case_id, step)
+    if step_dir is None:
+        step_dir = paths.artifacts_root / f"step{step}" / case_id
 
     summary = parse_key_values(step_dir / "summary.txt")
     analysis = parse_key_values(step_dir / "analysis" / "report.txt")
@@ -497,17 +604,18 @@ def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, obj
     raw_dir = step_dir / "raw"
 
     if step == 1:
-        symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
-        productions = parse_productions(raw_dir / "productions.txt")
         payload["step1_overview"] = load_source_preview(paths.repo_root, source)
-        if symbols:
-            payload["symbols"] = symbols
-        if productions:
-            payload["productions"] = productions
+        payload["step1_baseline"] = {
+            "symbols": int(summary.get("symbols", "0") or "0"),
+            "terminals": int(summary.get("terminals", "0") or "0"),
+            "nonterminals": int(summary.get("nonterminals", "0") or "0"),
+            "productions_with_augmented": int(summary.get("productions_with_augmented", "0") or "0"),
+        }
+        payload["input_spec_checks"] = build_input_spec_checks(paths.repo_root, source)
 
     if step == 2:
         symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
-        productions = parse_productions(raw_dir / "productions.txt")
+        productions = strip_augmented_productions(parse_productions(raw_dir / "productions.txt"))
         terminals = [s for s in symbols if s.get("kind") == "Terminal"]
         nonterminals = [s for s in symbols if s.get("kind") == "NonTerminal"]
         payload["grammar_model"] = {
@@ -516,16 +624,12 @@ def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, obj
             "nonterminals": nonterminals,
             "productions_count": len(productions),
         }
-        if symbols:
-            payload["symbols"] = symbols
-        if productions:
-            payload["productions"] = productions
 
     # 为防止 step8/step9 体积过大导致前端卡死，按步骤最小化装载字段。
     # 各页面只读取本步骤核心字段，不再把前序步骤大对象累加进当前步骤。
-    if step in (3, 4):
-        symbols = normalize_symbols(parse_tsv(raw_dir / "symbols.tsv"))
-        productions = parse_productions(raw_dir / "productions.txt")
+    if step == 3:
+        symbols = strip_augmented_symbols(normalize_symbols(parse_tsv(raw_dir / "symbols.tsv")))
+        productions = strip_augmented_productions(parse_productions(raw_dir / "productions.txt"))
         if symbols:
             payload["symbols"] = symbols
         if productions:
@@ -534,9 +638,11 @@ def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, obj
     if step == 4:
         payload["augmented"] = {"production": read_augmented_text(raw_dir / "augmented_grammar.txt")}
         payload["prod_index_by_lhs"] = normalize_prod_index(parse_tsv(raw_dir / "prod_index_by_lhs.tsv"))
-        # Step4 页面需要 productions 来展示具体式子。
-        if "productions" not in payload:
-            payload["productions"] = parse_productions(raw_dir / "productions.txt")
+        payload["preprocess"] = {
+            "passed": summary.get("preprocess_passed", analysis.get("preprocess_passed", "")),
+            "errors_count": int(analysis.get("preprocess_errors_count", "0") or "0"),
+            "warnings_count": int(analysis.get("preprocess_warnings_count", "0") or "0"),
+        }
 
     if step == 5:
         payload["first_sets"] = normalize_first(parse_tsv(raw_dir / "first_sets.tsv"))
@@ -544,7 +650,8 @@ def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, obj
     if step == 6:
         lr1_items = parse_lr1_items(raw_dir / "lr1_i0_items.txt")
         i0_targets: Dict[str, int] = {}
-        step7_raw_dir = paths.artifacts_root / "step7" / case_id / "raw"
+        step7_dir = resolve_step_dir(paths, case_id, 7)
+        step7_raw_dir = (step7_dir / "raw") if step7_dir else (paths.artifacts_root / "step7" / case_id / "raw")
         for row in parse_tsv(step7_raw_dir / "lr1_transitions.tsv"):
             from_state = int(row.get("from_state", "0"))
             if from_state != 0:
@@ -628,14 +735,9 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
     }
 
     for step in steps:
-        step_dir = paths.artifacts_root / f"step{step}" / case_id
-        if not step_dir.exists():
-            if step in (1, 2):
-                fallback = paths.artifacts_root / "step3" / case_id
-                if not fallback.exists():
-                    continue
-            else:
-                continue
+        step_dir = resolve_step_dir(paths, case_id, step)
+        if step_dir is None:
+            continue
         payload = collect_step_payload(paths, case_id, step)
         step_name = f"step{step}"
         step_out = case_output_root / step_name / "data.json"

@@ -5,3 +5,8 @@ artifacts/
 tests/out/
 tests/scripts/__pycache__
 *.pyc
+.claude/
+答辩相关/
+node_modules/
+/visualizer/public/data/
+/temp/

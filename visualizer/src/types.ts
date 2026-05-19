@@ -213,10 +213,27 @@ export interface StepData {
       text: string;
     }>;
   };
+  step1_baseline?: {
+    symbols: number;
+    terminals: number;
+    nonterminals: number;
+    productions_with_augmented: number;
+  };
   grammar_model?: {
     start_symbol: string;
     terminals: SymbolRow[];
     nonterminals: SymbolRow[];
     productions_count: number;
   };
+  preprocess?: {
+    passed: string;
+    errors_count: number;
+    warnings_count: number;
+  };
+  input_spec_checks?: Array<{
+    id: string;
+    label: string;
+    status: string;
+    detail: string;
+  }>;
 }

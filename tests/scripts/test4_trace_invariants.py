@@ -122,10 +122,10 @@ def main() -> int:
             return fail(msg2)
         messages.append(f"{case.name}: LR1({msg}); LALR({msg2})")
 
-    print("PASS: 测试4通过")
+    log("PASS", "测试4通过")
     for m in messages:
-        print(f"  - {m}")
-    print(f"  out_root={out_root}")
+        log("INFO", f"  - {m}")
+    log("INFO", f"  out_root={out_root}")
     return 0
 
 

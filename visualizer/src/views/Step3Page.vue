@@ -10,10 +10,10 @@
     <div v-if="store.error" class="error-box">{{ store.error }}</div>
     <template v-else-if="data">
       <section class="metrics-grid">
-        <MetricCard title="符号总数" :value="data.summary.symbols ?? '-'" />
-        <MetricCard title="终结符" :value="data.summary.terminals ?? '-'" />
-        <MetricCard title="非终结符" :value="data.summary.nonterminals ?? '-'" />
-        <MetricCard title="产生式总数" :value="data.summary.productions_with_augmented ?? '-'" />
+        <MetricCard title="符号总数" :value="symbolCount" />
+        <MetricCard title="终结符" :value="terminalCount" />
+        <MetricCard title="非终结符" :value="nonterminalCount" />
+        <MetricCard title="产生式总数(不含增广)" :value="productionCount" />
       </section>
 
       <EChartPanel
@@ -75,10 +75,15 @@ const filteredProductions = computed(() => {
   return list.filter((p) => p.text.toLowerCase().includes(k));
 });
 
+const symbols = computed(() => data.value?.symbols ?? []);
+const symbolCount = computed(() => symbols.value.length);
+const terminalCount = computed(() => symbols.value.filter((x) => x.kind === "Terminal").length);
+const nonterminalCount = computed(() => symbols.value.filter((x) => x.kind === "NonTerminal").length);
+const productionCount = computed(() => (data.value?.productions ?? []).length);
+
 const symbolChartOption = computed<EChartsOption>(() => {
-  const symbols = data.value?.symbols ?? [];
   const buckets = new Map<string, number>();
-  for (const s of symbols) {
+  for (const s of symbols.value) {
     buckets.set(s.kind, (buckets.get(s.kind) ?? 0) + 1);
   }
   return {

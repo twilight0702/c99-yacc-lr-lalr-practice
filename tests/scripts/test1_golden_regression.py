@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import pathlib
 import shutil
 import sys
@@ -18,6 +19,19 @@ SNAPSHOT_FILES = [
     "raw/parse_reductions_lalr.txt",
     "raw/parse_error_lalr.txt",
 ]
+
+
+def log(level: str, message: str) -> None:
+    print(f"[{level}]{message}")
+
+
+def file_fingerprint(path: pathlib.Path) -> str:
+    st = path.stat()
+    return f"{path.resolve()}::{st.st_size}::{st.st_mtime_ns}"
+
+
+def stable_key(parts: list[str]) -> str:
+    return hashlib.sha256("||".join(parts).encode("utf-8")).hexdigest()
 
 
 def read_text(path: pathlib.Path) -> str:
@@ -34,6 +48,7 @@ def main() -> int:
     parser.add_argument("--grammar", default="c99.y", help=".y 文法路径")
     parser.add_argument("--workdir", default=".", help="项目根目录")
     parser.add_argument("--out-root", default="tests/out/test1", help="临时导出目录")
+    parser.add_argument("--cache-root", default="tests/out/.cache/test1", help="缓存目录")
     parser.add_argument("--golden-root", default="tests/golden/test1", help="golden 目录")
     parser.add_argument("--max-steps", type=int, default=200000, help="最大解析步数")
     parser.add_argument("--update-golden", action="store_true", help="用当前结果更新 golden")
@@ -47,45 +62,85 @@ def main() -> int:
     out_root.mkdir(parents=True, exist_ok=True)
     if args.update_golden:
         golden_root.mkdir(parents=True, exist_ok=True)
+    cache_root = root / args.cache_root
+    cache_root.mkdir(parents=True, exist_ok=True)
 
     failures: list[str] = []
     passes: list[str] = []
+    total_cases = len(DEFAULT_CASES)
 
-    for case in DEFAULT_CASES:
+    for idx, case in enumerate(DEFAULT_CASES, start=1):
+        log("INFO", f"[{idx}/{total_cases}] case 开始: {case.name}")
         export_dir = out_root / case.name
-        proc = run_cmd(
+        case_tokens_path = (root / case.tokens).resolve()
+        case_key = stable_key(
             [
-                args.bin,
-                args.grammar,
-                "--parse-tokens",
-                case.tokens,
-                "--export",
-                "--export-dir",
-                str(export_dir),
-                "--max-parse-steps",
+                file_fingerprint((root / args.bin).resolve()),
+                file_fingerprint((root / args.grammar).resolve()),
+                file_fingerprint(case_tokens_path),
                 str(args.max_steps),
-            ],
-            cwd=root,
+            ]
         )
-        if proc.returncode != 0:
-            failures.append(f"{case.name}: 工具执行失败 exit={proc.returncode}")
-            continue
+        case_cache_dir = cache_root / "case_exports" / case_key
+        if export_dir.exists():
+            shutil.rmtree(export_dir)
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        if case_cache_dir.exists():
+            log("INFO", f"[{case.name}] 缓存命中，复用快照导出")
+            for rel in SNAPSHOT_FILES:
+                src = case_cache_dir / rel
+                dst = export_dir / rel
+                if src.exists():
+                    ensure_parent(dst)
+                    shutil.copy2(src, dst)
+        else:
+            log("INFO", f"[{case.name}] 缓存未命中，运行 yacc_parse_tool 并导出快照")
+            proc = run_cmd(
+                [
+                    args.bin,
+                    args.grammar,
+                    "--parse-tokens",
+                    case.tokens,
+                    "--export",
+                    "--export-dir",
+                    str(export_dir),
+                    "--max-parse-steps",
+                    str(args.max_steps),
+                ],
+                cwd=root,
+            )
+            if proc.returncode != 0:
+                failures.append(f"{case.name}: 工具执行失败 exit={proc.returncode}")
+                log("ERROR", f"[{case.name}] 工具执行失败 exit={proc.returncode}")
+                continue
+            for rel in SNAPSHOT_FILES:
+                src = export_dir / rel
+                dst = case_cache_dir / rel
+                if src.exists():
+                    ensure_parent(dst)
+                    shutil.copy2(src, dst)
+            log("PASS", f"[{case.name}] 快照已写入缓存")
 
         case_ok = True
+        log("INFO", f"[{case.name}] 开始校验快照文件")
         for rel in SNAPSHOT_FILES:
             current = export_dir / rel
             golden = golden_root / case.name / rel
             if not current.exists():
                 failures.append(f"{case.name}: 缺少当前输出文件 {current}")
                 case_ok = False
+                log("ERROR", f"[{case.name}] 缺少当前输出文件: {current}")
                 continue
             if args.update_golden:
                 ensure_parent(golden)
                 golden.write_text(read_text(current), encoding="utf-8")
+                log("INFO", f"[{case.name}] update-golden 写入: {rel}")
                 continue
             if not golden.exists():
                 failures.append(f"{case.name}: 缺少 golden 文件 {golden}")
                 case_ok = False
+                log("ERROR", f"[{case.name}] 缺少 golden 文件: {golden}")
                 continue
 
             cur_text = read_text(current)
@@ -105,36 +160,37 @@ def main() -> int:
                     diff = "\n".join(diff.splitlines()[:60]) + "\n... (diff truncated)"
                 failures.append(f"{case.name}: 快照不一致 ({rel})\n{diff}")
                 case_ok = False
+                log("ERROR", f"[{case.name}] 快照不一致: {rel}")
                 break
 
         if case_ok:
             passes.append(case.name)
+            log("PASS", f"[{case.name}] case 通过")
 
     if args.update_golden:
         if failures:
-            print("FAIL: update 模式执行失败")
+            log("ERROR", "update 模式执行失败")
             for f in failures:
-                print(f"- {f}")
+                log("ERROR", f"- {f}")
             return 1
-        print("PASS: golden 已更新")
-        print(f"  golden_root={golden_root}")
-        print(f"  cases={len(passes)}")
+        log("PASS", "golden 已更新")
+        log("INFO", f"golden_root={golden_root}")
+        log("INFO", f"cases={len(passes)}")
         return 0
 
     if failures:
-        print("FAIL: 测试1基线回归失败")
+        log("ERROR", "测试1基线回归失败")
         for f in failures[:20]:
-            print(f"- {f}")
+            log("ERROR", f"- {f}")
         if len(failures) > 20:
-            print(f"... 其余 {len(failures) - 20} 条已省略")
+            log("WARN", f"... 其余 {len(failures) - 20} 条已省略")
         return 1
 
-    print("PASS: 测试1通过（golden 一致）")
-    print(f"  cases={len(passes)}")
-    print(f"  golden_root={golden_root}")
+    log("PASS", "测试1通过（golden 一致）")
+    log("INFO", f"cases={len(passes)}")
+    log("INFO", f"golden_root={golden_root}")
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

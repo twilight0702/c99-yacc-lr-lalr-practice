@@ -241,6 +241,110 @@ void print_step10_lalr_result(const seu::yacc::LR1Step10Result& step10_result,
     std::cout << "LALR(1) 冲突数: " << step10_result.lalr_conflict_count << '\n';
 }
 
+void print_machine_lalr_reduction_sequence(const seu::yacc::LRParseRunResult& lalr_parse_result) {
+    std::cout << "__YACC_LALR_REDUCTIONS__:";
+    for (std::size_t i = 0; i < lalr_parse_result.reduction_production_ids.size(); ++i) {
+        if (i > 0) {
+            std::cout << ",";
+        }
+        std::cout << lalr_parse_result.reduction_production_ids[i];
+    }
+    std::cout << '\n';
+}
+
+void print_machine_step10_raw(const seu::yacc::Grammar& grammar, const seu::yacc::LR1Step10Result& step10_result) {
+    std::cout << "__YACC_STEP10_RAW_BEGIN__\n";
+
+    std::cout << "__YACC_STEP10_LALR_STATE_ITEMS_BEGIN__\n";
+    for (const auto& state : step10_result.lalr_step7_result.states) {
+        std::cout << "[state " << state.state_id << "]\n";
+        for (const auto& item : state.items) {
+            std::cout << seu::yacc::format_lr1_item(grammar, item) << '\n';
+        }
+        std::cout << '\n';
+    }
+    std::cout << "__YACC_STEP10_LALR_STATE_ITEMS_END__\n";
+
+    std::cout << "__YACC_STEP10_LALR_TRANSITIONS_BEGIN__\n";
+    std::cout << "from_state\tsymbol_id\tsymbol_name\tto_state\n";
+    for (const auto& edge : step10_result.lalr_step7_result.transitions) {
+        const std::string symbol_name =
+            (edge.symbol_id >= 0 && edge.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[edge.symbol_id].name
+                : "<invalid>";
+        std::cout << edge.from_state_id << '\t' << edge.symbol_id << '\t' << symbol_name << '\t'
+                  << edge.to_state_id << '\n';
+    }
+    std::cout << "__YACC_STEP10_LALR_TRANSITIONS_END__\n";
+
+    std::cout << "__YACC_STEP10_LALR_ACTION_TABLE_BEGIN__\n";
+    std::cout << "state_id\tterminal_id\tterminal_name\taction\ttarget\n";
+    for (std::size_t state_id = 0; state_id < step10_result.lalr_step8_result.action_table.size(); ++state_id) {
+        std::vector<std::pair<int, seu::yacc::ParseActionEntry>> entries;
+        entries.reserve(step10_result.lalr_step8_result.action_table[state_id].size());
+        for (const auto& kv : step10_result.lalr_step8_result.action_table[state_id]) {
+            entries.push_back(kv);
+        }
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        for (const auto& kv : entries) {
+            const int symbol_id = kv.first;
+            const auto& action = kv.second;
+            const std::string symbol_name =
+                (symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size()))
+                    ? grammar.symbols[symbol_id].name
+                    : "<invalid>";
+            std::string target = "-";
+            if (action.type == seu::yacc::ParseActionType::Shift) {
+                target = std::to_string(action.target_state_id);
+            } else if (action.type == seu::yacc::ParseActionType::Reduce) {
+                target = std::to_string(action.reduce_production_id);
+            }
+            std::cout << state_id << '\t' << symbol_id << '\t' << symbol_name << '\t'
+                      << seu::yacc::format_parse_action_entry(action) << '\t' << target << '\n';
+        }
+    }
+    std::cout << "__YACC_STEP10_LALR_ACTION_TABLE_END__\n";
+
+    std::cout << "__YACC_STEP10_LALR_GOTO_TABLE_BEGIN__\n";
+    std::cout << "state_id\tnonterminal_id\tnonterminal_name\tto_state\n";
+    for (std::size_t state_id = 0; state_id < step10_result.lalr_step8_result.goto_table.size(); ++state_id) {
+        std::vector<std::pair<int, int>> entries;
+        entries.reserve(step10_result.lalr_step8_result.goto_table[state_id].size());
+        for (const auto& kv : step10_result.lalr_step8_result.goto_table[state_id]) {
+            entries.push_back(kv);
+        }
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        for (const auto& kv : entries) {
+            const int symbol_id = kv.first;
+            const int to_state = kv.second;
+            const std::string symbol_name =
+                (symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size()))
+                    ? grammar.symbols[symbol_id].name
+                    : "<invalid>";
+            std::cout << state_id << '\t' << symbol_id << '\t' << symbol_name << '\t' << to_state << '\n';
+        }
+    }
+    std::cout << "__YACC_STEP10_LALR_GOTO_TABLE_END__\n";
+
+    std::cout << "__YACC_STEP10_LALR_CONFLICTS_BEGIN__\n";
+    std::cout << "state_id\tsymbol_id\tsymbol_name\texisting_action\tincoming_action\n";
+    for (const auto& c : step10_result.lalr_step8_result.conflicts) {
+        const std::string symbol_name =
+            (c.symbol_id >= 0 && c.symbol_id < static_cast<int>(grammar.symbols.size()))
+                ? grammar.symbols[c.symbol_id].name
+                : "<invalid>";
+        std::cout << c.state_id << '\t' << c.symbol_id << '\t' << symbol_name << '\t' << c.existing_action
+                  << '\t' << c.incoming_action << '\n';
+    }
+    std::cout << "__YACC_STEP10_LALR_CONFLICTS_END__\n";
+
+    std::cout << "__YACC_STEP10_RAW_END__\n";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -249,6 +353,8 @@ int main(int argc, char** argv) {
     bool dump_productions = false;
     bool run_validate = true;
     bool export_report = false;
+    bool dump_lalr_reductions_machine = false;
+    bool dump_step10_raw_machine = false;
     std::string export_dir;
     std::string token_file_path;
     int max_parse_steps = 200000;
@@ -273,6 +379,14 @@ int main(int argc, char** argv) {
         }
         if (arg == "--export") {
             export_report = true;
+            continue;
+        }
+        if (arg == "--dump-lalr-reductions-machine") {
+            dump_lalr_reductions_machine = true;
+            continue;
+        }
+        if (arg == "--dump-step10-raw-machine") {
+            dump_step10_raw_machine = true;
             continue;
         }
         if (arg == "--export-dir") {
@@ -403,8 +517,14 @@ int main(int argc, char** argv) {
             std::cout << "[第9步 LALR(1) 总控程序]\n";
             print_step9_parse_result(grammar, lalr_parse_result);
             print_step9_parse_compare_result(lr1_parse_result, lalr_parse_result);
+            if (dump_lalr_reductions_machine) {
+                print_machine_lalr_reduction_sequence(lalr_parse_result);
+            }
         } else {
             std::cout << "[第9步 LR 总控程序] 已跳过（未提供 --parse-tokens）\n";
+        }
+        if (dump_step10_raw_machine) {
+            print_machine_step10_raw(grammar, step10_result);
         }
 
         if (dump_symbols) {

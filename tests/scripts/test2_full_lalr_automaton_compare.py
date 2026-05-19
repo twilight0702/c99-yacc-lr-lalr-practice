@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import json
 import pathlib
 import re
 import shutil
@@ -13,6 +15,10 @@ import tempfile
 from dataclasses import dataclass, field
 
 from _common import load_tsv, run_cmd
+
+
+def log(level: str, message: str) -> None:
+    print(f"[{level}]{message}")
 
 
 @dataclass
@@ -244,6 +250,106 @@ def parse_our_automaton(raw_dir: pathlib.Path) -> tuple[
     return our_states, trans_map, action_map, goto_map, terminal_names
 
 
+def parse_our_lalr_states_from_text(text: str) -> dict[int, set[str]]:
+    result: dict[int, set[str]] = {}
+    cur = -1
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m_state = re.match(r"^\[state\s+(\d+)\]$", line)
+        if m_state:
+            cur = int(m_state.group(1))
+            result[cur] = set()
+            continue
+        if cur < 0:
+            continue
+        if not (line.startswith("[") and line.endswith("]")):
+            continue
+        body = line[1:-1].strip()
+        if " -> " not in body:
+            continue
+        lhs, rhs_lookahead = body.split(" -> ", 1)
+        rhs_core = rhs_lookahead.rsplit(", ", 1)[0]
+        result[cur].add(norm_item(lhs, rhs_core))
+    return result
+
+
+def parse_tsv_text(tsv_text: str) -> list[dict[str, str]]:
+    lines = [x for x in tsv_text.splitlines() if x.strip()]
+    if not lines:
+        return []
+    reader = csv.DictReader(lines, delimiter="\t")
+    return [dict(r) for r in reader]
+
+
+def file_fingerprint(path: pathlib.Path) -> str:
+    st = path.stat()
+    return f"{path.resolve()}::{st.st_size}::{st.st_mtime_ns}"
+
+
+def stable_key(parts: list[str]) -> str:
+    return hashlib.sha256("||".join(parts).encode("utf-8")).hexdigest()
+
+
+def extract_block(text: str, begin: str, end: str) -> str:
+    i = text.find(begin)
+    j = text.find(end)
+    if i < 0 or j < 0 or j < i:
+        raise RuntimeError(f"缺少块标记: {begin} .. {end}")
+    return text[i + len(begin):j].strip("\n")
+
+
+def parse_our_automaton_from_stdout(stdout: str) -> tuple[
+    dict[int, set[str]],
+    dict[tuple[int, str], int],
+    dict[tuple[int, str], str],
+    dict[tuple[int, str], int],
+    set[str],
+    int,
+]:
+    states_text = extract_block(
+        stdout, "__YACC_STEP10_LALR_STATE_ITEMS_BEGIN__", "__YACC_STEP10_LALR_STATE_ITEMS_END__"
+    )
+    transitions_text = extract_block(
+        stdout, "__YACC_STEP10_LALR_TRANSITIONS_BEGIN__", "__YACC_STEP10_LALR_TRANSITIONS_END__"
+    )
+    action_text = extract_block(
+        stdout, "__YACC_STEP10_LALR_ACTION_TABLE_BEGIN__", "__YACC_STEP10_LALR_ACTION_TABLE_END__"
+    )
+    goto_text = extract_block(
+        stdout, "__YACC_STEP10_LALR_GOTO_TABLE_BEGIN__", "__YACC_STEP10_LALR_GOTO_TABLE_END__"
+    )
+    conflicts_text = extract_block(
+        stdout, "__YACC_STEP10_LALR_CONFLICTS_BEGIN__", "__YACC_STEP10_LALR_CONFLICTS_END__"
+    )
+
+    our_states = parse_our_lalr_states_from_text(states_text)
+
+    trans_rows = parse_tsv_text(transitions_text)
+    trans_map: dict[tuple[int, str], int] = {}
+    for r in trans_rows:
+        trans_map[(int(r["from_state"]), r["symbol_name"])] = int(r["to_state"])
+
+    action_rows = parse_tsv_text(action_text)
+    action_map: dict[tuple[int, str], str] = {}
+    terminal_names: set[str] = set()
+    for r in action_rows:
+        sid = int(r["state_id"])
+        tname = r["terminal_name"]
+        act = r["action"]
+        action_map[(sid, tname)] = act
+        terminal_names.add(tname)
+
+    goto_rows = parse_tsv_text(goto_text)
+    goto_map: dict[tuple[int, str], int] = {}
+    for r in goto_rows:
+        goto_map[(int(r["state_id"]), r["nonterminal_name"])] = int(r["to_state"])
+
+    conflicts_rows = parse_tsv_text(conflicts_text)
+    return our_states, trans_map, action_map, goto_map, terminal_names, len(conflicts_rows)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="测试2f：完整 LALR 状态机对拍")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
@@ -252,6 +358,7 @@ def main() -> int:
     parser.add_argument("--out-root", default="tests/out/test2_full", help="输出目录")
     parser.add_argument("--strict", action="store_true", help="缺依赖时失败")
     args = parser.parse_args()
+    log("INFO", "测试2f开始：完整 LALR 状态机对拍")
 
     bison = shutil.which("bison")
     if not bison:
@@ -265,33 +372,64 @@ def main() -> int:
     root = pathlib.Path(args.workdir).resolve()
     out_root = root / args.out_root
     out_root.mkdir(parents=True, exist_ok=True)
+    log("INFO", f"工作目录: {root}")
 
-    # 1) 导出我方 step10 LALR 产物
-    our_dir = out_root / "our_step10"
-    if our_dir.exists():
-        shutil.rmtree(our_dir)
-    our_dir.mkdir(parents=True, exist_ok=True)
-    p_our = run_cmd([args.bin, args.grammar, "--export", "--export-dir", str(our_dir)], cwd=root)
-    if p_our.returncode != 0:
-        print(f"FAIL: 运行我方导出失败\n{p_our.stderr}\n{p_our.stdout}")
-        return 1
-    raw_dir = our_dir / "raw"
+    cache_root = out_root / ".cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
 
-    # 2) 生成 bison .output
-    with tempfile.TemporaryDirectory(prefix="yacc_test2_full_", dir=str(out_root)) as tmp:
-        tmp_dir = pathlib.Path(tmp)
-        parser_c = tmp_dir / "parser.tab.c"
-        p_bison = run_cmd([bison, "--report=state", "-v", "-d", "-o", str(parser_c), str(root / args.grammar)], cwd=root)
-        if p_bison.returncode != 0:
-            print(f"FAIL: bison 生成失败\n{p_bison.stderr}\n{p_bison.stdout}")
+    # 1) 我方 step10 全量产物（stdout 机器块 + 缓存）
+    our_key = stable_key(
+        [
+            file_fingerprint((root / args.bin).resolve()),
+            file_fingerprint((root / args.grammar).resolve()),
+        ]
+    )
+    our_cache_file = cache_root / "our_step10" / f"{our_key}.json"
+    our_cache_file.parent.mkdir(parents=True, exist_ok=True)
+    if our_cache_file.exists():
+        log("INFO", "我方 step10 stdout 缓存命中")
+        our_blob = json.loads(our_cache_file.read_text(encoding="utf-8"))
+        our_stdout = str(our_blob["stdout"])
+    else:
+        log("INFO", "我方 step10 stdout 缓存未命中，运行 yacc_parse_tool")
+        p_our = run_cmd([args.bin, args.grammar, "--dump-step10-raw-machine"], cwd=root)
+        if p_our.returncode != 0:
+            print(f"FAIL: 运行我方 step10 导出失败\n{p_our.stderr}\n{p_our.stdout}")
             return 1
-        bison_output = tmp_dir / "parser.output"
-        if not bison_output.exists():
-            print(f"FAIL: 未找到 bison 输出文件: {bison_output}")
-            return 1
-        (out_root / "bison_parser.output").write_text(bison_output.read_text(encoding="utf-8"), encoding="utf-8")
+        our_stdout = p_our.stdout
+        our_cache_file.write_text(json.dumps({"stdout": our_stdout}, ensure_ascii=False), encoding="utf-8")
+        log("PASS", "我方 step10 stdout 已写入缓存")
 
-    our_states, our_trans, our_action, our_goto, terminal_names = parse_our_automaton(raw_dir)
+    # 2) bison .output（缓存）
+    bison_key = stable_key([file_fingerprint((root / args.grammar).resolve()), str(bison)])
+    bison_cache_dir = cache_root / "bison_output" / bison_key
+    bison_cache_dir.mkdir(parents=True, exist_ok=True)
+    cached_bison_output = bison_cache_dir / "parser.output"
+    if not cached_bison_output.exists():
+        log("INFO", "bison .output 缓存未命中，开始生成")
+        with tempfile.TemporaryDirectory(prefix="yacc_test2_full_", dir=str(out_root)) as tmp:
+            tmp_dir = pathlib.Path(tmp)
+            parser_c = tmp_dir / "parser.tab.c"
+            p_bison = run_cmd(
+                [bison, "--report=state", "-v", "-d", "-o", str(parser_c), str(root / args.grammar)], cwd=root
+            )
+            if p_bison.returncode != 0:
+                print(f"FAIL: bison 生成失败\n{p_bison.stderr}\n{p_bison.stdout}")
+                return 1
+            bison_output = tmp_dir / "parser.output"
+            if not bison_output.exists():
+                print(f"FAIL: 未找到 bison 输出文件: {bison_output}")
+                return 1
+            cached_bison_output.write_text(bison_output.read_text(encoding="utf-8"), encoding="utf-8")
+            log("PASS", "bison .output 已写入缓存")
+    else:
+        log("INFO", "bison .output 缓存命中")
+    (out_root / "bison_parser.output").write_text(cached_bison_output.read_text(encoding="utf-8"), encoding="utf-8")
+    log("INFO", "开始解析并对拍状态机（状态/边/Goto/Action/冲突）")
+
+    our_states, our_trans, our_action, our_goto, terminal_names, our_conflict_count = parse_our_automaton_from_stdout(
+        our_stdout
+    )
     bison_states, bison_conflict_count_by_state = parse_bison_output(out_root / "bison_parser.output")
     normalize_bison_accept_tail(bison_states)
 
@@ -332,6 +470,7 @@ def main() -> int:
         (out_root / "compare_full_diff.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
         print(report[0])
         return 1
+    log("PASS", "状态签名集合一致")
 
     # bison_state_id -> our_state_id
     b2o: dict[int, int] = {}
@@ -366,6 +505,7 @@ def main() -> int:
         (out_root / "compare_full_diff.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("FAIL: 转移边集合不一致")
         return 1
+    log("PASS", "转移边集合一致")
 
     # 5) Goto 表比较（由 our_goto 与 bison goto_edges 对照）
     bison_goto_map: dict[tuple[int, str], int] = {}
@@ -384,6 +524,7 @@ def main() -> int:
         (out_root / "compare_full_diff.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("FAIL: Goto 表不一致")
         return 1
+    log("PASS", "Goto 表一致")
 
     # 6) Action 表比较（展开 bison $default 到我方终结符全集）
     bison_action_map: dict[tuple[int, str], str] = {}
@@ -436,15 +577,16 @@ def main() -> int:
         (out_root / "compare_full_diff.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
         print("FAIL: Action 表不一致")
         return 1
+    log("PASS", "Action 表一致（含 bison $default 归一化）")
 
     # 7) 冲突数量比较（LALR）
-    our_conflicts = load_tsv(raw_dir / "lalr_parse_table_conflicts.tsv")
     bison_conflicts_total = sum(bison_conflict_count_by_state.values())
-    if len(our_conflicts) != bison_conflicts_total:
+    if our_conflict_count != bison_conflicts_total:
         print(
-            f"FAIL: 冲突总数不一致: our={len(our_conflicts)}, bison={bison_conflicts_total}"
+            f"FAIL: 冲突总数不一致: our={our_conflict_count}, bison={bison_conflicts_total}"
         )
         return 1
+    log("PASS", "冲突总数一致")
 
     # 8) 输出报告
     tsv_path = out_root / "compare_full_report.tsv"
@@ -463,7 +605,7 @@ def main() -> int:
                 {"metric": "goto_entries", "our": str(len(our_goto)), "bison": str(len(bison_goto_map)), "equal": "true"},
                 {"metric": "action_entries_our", "our": str(len(our_action)), "bison": str(len(our_action)), "equal": "true"},
                 {"metric": "action_entries_bison_explicit", "our": str(len(bison_action_map)), "bison": str(len(bison_action_map)), "equal": "true"},
-                {"metric": "conflicts", "our": str(len(our_conflicts)), "bison": str(bison_conflicts_total), "equal": "true"},
+                {"metric": "conflicts", "our": str(our_conflict_count), "bison": str(bison_conflicts_total), "equal": "true"},
             ]
         )
 
@@ -481,9 +623,9 @@ def main() -> int:
     ]
     md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
-    print("PASS: 测试2f通过（完整 LALR 状态机对拍一致）")
-    print(f"  - report: {tsv_path}")
-    print(f"  - report: {md_path}")
+    log("PASS", "测试2f通过（完整 LALR 状态机对拍一致）")
+    log("INFO", f"  - report: {tsv_path}")
+    log("INFO", f"  - report: {md_path}")
     return 0
 
 

@@ -72,50 +72,6 @@
           </button>
         </div>
       </section>
-
-      <section class="panel">
-        <header class="panel-header">
-          <h3>产生式列表（分页检索）</h3>
-          <input
-            v-model.trim="prodKeyword"
-            class="input"
-            type="text"
-            placeholder="按 lhs/rhs 关键词检索"
-          />
-        </header>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>LHS</th>
-                <th>RHS</th>
-                <th>line</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="p in pagedProductions" :key="p.id">
-                <td>{{ p.id }}</td>
-                <td>{{ p.lhs }}</td>
-                <td>{{ p.rhs.join(" ") || "epsilon" }}</td>
-                <td>{{ p.line }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="panel-body toolbar">
-          <button class="btn" type="button" @click="prevProdPage" :disabled="prodPage <= 1">上一页</button>
-          <span>第 {{ prodPage }} / {{ prodTotalPages }} 页</span>
-          <button
-            class="btn"
-            type="button"
-            @click="nextProdPage"
-            :disabled="prodPage >= prodTotalPages"
-          >
-            下一页
-          </button>
-        </div>
-      </section>
     </template>
   </section>
 </template>
@@ -129,7 +85,6 @@ import { downloadJsonFile } from "../utils/data";
 type SymbolTab = "all" | "terminal" | "nonterminal";
 
 const SYM_PAGE_SIZE = 24;
-const PROD_PAGE_SIZE = 20;
 const store = useYaccStore();
 const data = computed(() => store.stepData[2]);
 const grammar = computed(() => data.value?.grammar_model ?? {
@@ -140,16 +95,14 @@ const grammar = computed(() => data.value?.grammar_model ?? {
 });
 const tab = ref<SymbolTab>("all");
 const symPage = ref(1);
-const prodPage = ref(1);
-const prodKeyword = ref("");
 
 const symbolsByTab = computed(() => {
-  const all = data.value?.symbols ?? [];
+  const all = [...grammar.value.terminals, ...grammar.value.nonterminals];
   if (tab.value === "terminal") {
-    return all.filter((x) => x.kind === "Terminal");
+    return grammar.value.terminals;
   }
   if (tab.value === "nonterminal") {
-    return all.filter((x) => x.kind === "NonTerminal");
+    return grammar.value.nonterminals;
   }
   return all;
 });
@@ -160,36 +113,12 @@ const pagedSymbols = computed(() => {
   return symbolsByTab.value.slice(start, start + SYM_PAGE_SIZE);
 });
 
-const filteredProductions = computed(() => {
-  const list = data.value?.productions ?? [];
-  if (!prodKeyword.value) {
-    return list;
-  }
-  const k = prodKeyword.value.toLowerCase();
-  return list.filter((x) => x.text.toLowerCase().includes(k));
-});
-
-const prodTotalPages = computed(() => Math.max(1, Math.ceil(filteredProductions.value.length / PROD_PAGE_SIZE)));
-const pagedProductions = computed(() => {
-  const start = (prodPage.value - 1) * PROD_PAGE_SIZE;
-  return filteredProductions.value.slice(start, start + PROD_PAGE_SIZE);
-});
-
 watch([tab, symTotalPages], () => {
   if (symPage.value > symTotalPages.value) {
     symPage.value = symTotalPages.value;
   }
   if (symPage.value < 1) {
     symPage.value = 1;
-  }
-});
-
-watch([prodKeyword, prodTotalPages], () => {
-  if (prodPage.value > prodTotalPages.value) {
-    prodPage.value = prodTotalPages.value;
-  }
-  if (prodPage.value < 1) {
-    prodPage.value = 1;
   }
 });
 
@@ -204,14 +133,6 @@ function prevSymPage() {
 
 function nextSymPage() {
   symPage.value = Math.min(symTotalPages.value, symPage.value + 1);
-}
-
-function prevProdPage() {
-  prodPage.value = Math.max(1, prodPage.value - 1);
-}
-
-function nextProdPage() {
-  prodPage.value = Math.min(prodTotalPages.value, prodPage.value + 1);
 }
 
 function exportJson() {

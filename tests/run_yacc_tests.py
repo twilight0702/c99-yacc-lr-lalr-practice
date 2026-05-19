@@ -4,19 +4,42 @@
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
 
 
+def log(level: str, message: str) -> None:
+    print(f"[{level}]{message}")
+
+
 def run(cmd: list[str], cwd: pathlib.Path) -> int:
-    print(f"$ {' '.join(cmd)}")
-    proc = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True)
-    if proc.stdout:
-        print(proc.stdout.rstrip())
-    if proc.stderr:
-        print(proc.stderr.rstrip())
-    return proc.returncode
+    real_cmd = list(cmd)
+    if real_cmd and real_cmd[0] == "python3" and (len(real_cmd) < 2 or real_cmd[1] != "-u"):
+        real_cmd.insert(1, "-u")
+
+    log("INFO", f"执行命令: {' '.join(real_cmd)}")
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    proc = subprocess.Popen(
+        real_cmd,
+        cwd=str(cwd),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+        env=env,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        print(line.rstrip())
+    rc = proc.wait()
+    if rc == 0:
+        log("PASS", f"命令执行成功: {' '.join(real_cmd)}")
+    else:
+        log("ERROR", f"命令执行失败(rc={rc}): {' '.join(real_cmd)}")
+    return rc
 
 
 def main() -> int:
@@ -32,38 +55,48 @@ def main() -> int:
     args = parser.parse_args()
 
     root = pathlib.Path(args.workdir).resolve()
+    log("INFO", f"测试根目录: {root}")
     test_ids = [x.strip() for x in args.tests.split(",") if x.strip()]
     rc_all = 0
 
     for test_id in test_ids:
         if test_id == "1":
+            test_name = "测试一（golden 回归）"
             cmd = ["python3", "tests/scripts/test1_golden_regression.py"]
             if args.update_golden:
                 cmd.append("--update-golden")
         elif test_id == "2":
+            test_name = "测试二（Bison 严格对拍）"
             cmd = ["python3", "tests/scripts/test2_bison_compare.py"]
             if args.strict_bison:
                 cmd.append("--strict")
         elif test_id == "2f":
+            test_name = "测试二扩展（完整 LALR 状态机对拍）"
             cmd = ["python3", "tests/scripts/test2_full_lalr_automaton_compare.py"]
             if args.strict_bison:
                 cmd.append("--strict")
         elif test_id == "3":
+            test_name = "测试三（表一致性）"
             cmd = ["python3", "tests/scripts/test3_table_consistency.py"]
         elif test_id == "4":
+            test_name = "测试四（trace 不变式）"
             cmd = ["python3", "tests/scripts/test4_trace_invariants.py"]
         else:
-            print(f"忽略未知测试编号: {test_id}")
+            log("WARN", f"忽略未知测试编号: {test_id}")
             continue
 
+        log("INFO", f"测试开始：{test_name}")
         rc = run(cmd, cwd=root)
         if rc != 0:
             rc_all = rc
+            log("ERROR", f"测试失败：{test_name}")
+        else:
+            log("PASS", f"测试通过：{test_name}")
 
     if rc_all == 0:
-        print("ALL PASS")
+        log("PASS", "全部测试通过")
     else:
-        print("SOME FAILED")
+        log("ERROR", "存在测试失败")
     return rc_all
 
 

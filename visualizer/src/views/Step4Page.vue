@@ -10,10 +10,11 @@
     <div v-if="store.error" class="error-box">{{ store.error }}</div>
     <template v-else-if="data">
       <section class="metrics-grid">
-        <MetricCard title="预处理通过" :value="data.summary.preprocess_passed ?? '-'" />
+        <MetricCard title="预处理通过" :value="data.preprocess?.passed ?? '-'" />
         <MetricCard title="增广开始符" :value="data.summary.augmented_start_symbol ?? '-'" />
         <MetricCard title="增广产生式 ID" :value="data.summary.augmented_production_id ?? '-'" />
-        <MetricCard title="非终结符数量" :value="data.summary.nonterminals ?? '-'" />
+        <MetricCard title="预处理错误数" :value="data.preprocess?.errors_count ?? 0" />
+        <MetricCard title="预处理告警数" :value="data.preprocess?.warnings_count ?? 0" />
       </section>
 
       <section class="panel">
@@ -21,6 +22,7 @@
           <h3>增广文法</h3>
         </header>
         <div class="panel-body">
+          <p class="hint">从 Step4 开始引入增广产生式（S' -> start_symbol）。</p>
           <p class="mono-line">{{ data.augmented?.production || "无" }}</p>
         </div>
       </section>
@@ -36,7 +38,6 @@
                 <th>lhs_id</th>
                 <th>lhs_name</th>
                 <th>production_ids</th>
-                <th>productions</th>
               </tr>
             </thead>
             <tbody>
@@ -44,7 +45,6 @@
                 <td>{{ row.lhs_id }}</td>
                 <td>{{ row.lhs_name }}</td>
                 <td>{{ row.production_ids.join(", ") }}</td>
-                <td class="preline">{{ formatProductions(row.production_ids) }}</td>
               </tr>
             </tbody>
           </table>
@@ -62,21 +62,6 @@ import { downloadJsonFile } from "../utils/data";
 
 const store = useYaccStore();
 const data = computed(() => store.stepData[4]);
-
-function formatProductions(ids: number[]): string {
-  const list = data.value?.productions ?? [];
-  const prodMap = new Map(list.map((p) => [p.id, p]));
-  return ids
-    .map((id) => {
-      const p = prodMap.get(id);
-      if (!p) {
-        return `#${id}: ?`;
-      }
-      const rhs = p.rhs.length > 0 ? p.rhs.join(" ") : "epsilon";
-      return `#${id}: ${p.lhs} -> ${rhs}`;
-    })
-    .join("\n");
-}
 
 function exportJson() {
   if (!data.value) {
