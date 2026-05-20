@@ -11,6 +11,10 @@ import sys
 from _common import DEFAULT_CASES, load_tsv, parse_kv_file, run_cmd
 
 
+def log(level: str, message: str) -> None:
+    print(f"[{level}] {message}")
+
+
 def fail(msg: str) -> int:
     print(f"FAIL: {msg}")
     return 1
@@ -131,4 +135,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
