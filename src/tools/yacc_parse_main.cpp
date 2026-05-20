@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <set>
 #include <string>
@@ -418,39 +419,17 @@ int main(int argc, char** argv) {
     }
 
     try {
+        auto stage_start = std::chrono::steady_clock::now();
+        auto mark_stage = [&](const std::string& label) {
+            const auto now = std::chrono::steady_clock::now();
+            const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - stage_start).count();
+            std::cout << "[进度] " << label << " (+" << ms << " ms)\n";
+            stage_start = now;
+        };
+
         seu::yacc::Grammar grammar = seu::yacc::parse_yacc_file(input_path);
         print_summary(grammar);
-        const seu::yacc::GrammarPreprocessReport preprocess_report = seu::yacc::preprocess_grammar(grammar);
-        const seu::yacc::GrammarAnalysis analysis = seu::yacc::analyze_grammar(grammar);
-        const seu::yacc::FirstSetResult first_result = seu::yacc::compute_first_sets(grammar);
-        const seu::yacc::FirstSetValidationReport first_validation =
-            seu::yacc::validate_first_sets(grammar, first_result);
-        const seu::yacc::LR1Step6Result lr1_result = seu::yacc::build_step6_lr1_items(grammar, first_result);
-        const seu::yacc::LR1Step6ValidationReport lr1_validation =
-            seu::yacc::validate_step6_lr1_items(grammar, first_result, lr1_result);
-        const seu::yacc::LR1Step7Result lr1_step7_result =
-            seu::yacc::build_step7_lr1_canonical_collection(grammar, first_result);
-        const seu::yacc::LR1Step7ValidationReport lr1_step7_validation =
-            seu::yacc::validate_step7_lr1_canonical_collection(grammar, first_result, lr1_step7_result);
-        const seu::yacc::LR1Step8Result lr1_step8_result =
-            seu::yacc::build_step8_lr1_parsing_table(grammar, lr1_step7_result);
-        const seu::yacc::LR1Step8ValidationReport lr1_step8_validation =
-            seu::yacc::validate_step8_lr1_parsing_table(grammar, lr1_step7_result, lr1_step8_result);
-        const seu::yacc::LR1Step10Result step10_result =
-            seu::yacc::build_step10_lalr_from_lr1(grammar, lr1_step7_result, lr1_step8_result);
-        const seu::yacc::LR1Step10ValidationReport step10_validation = seu::yacc::validate_step10_lalr_from_lr1(
-            grammar, lr1_step7_result, lr1_step8_result, step10_result);
-        bool run_step9 = !token_file_path.empty();
-        std::vector<seu::yacc::RuntimeToken> runtime_tokens;
-        seu::yacc::LRParseRunResult lr1_parse_result;
-        seu::yacc::LRParseRunResult lalr_parse_result;
-        if (run_step9) {
-            runtime_tokens = seu::yacc::load_runtime_tokens_from_file(grammar, token_file_path);
-            lr1_parse_result =
-                seu::yacc::run_step9_lr_parse(grammar, lr1_step8_result, runtime_tokens, max_parse_steps);
-            lalr_parse_result = seu::yacc::run_step9_lr_parse(
-                grammar, step10_result.lalr_step8_result, runtime_tokens, max_parse_steps);
-        }
+        mark_stage("Step1-3 解析输入完成");
 
         if (run_validate) {
             std::string validate_error;
@@ -460,6 +439,48 @@ int main(int argc, char** argv) {
                 std::cout << "[校验] 失败: " << validate_error << '\n';
                 return 3;
             }
+        } else {
+            std::cout << "[校验] 已跳过\n";
+        }
+
+        const seu::yacc::GrammarPreprocessReport preprocess_report = seu::yacc::preprocess_grammar(grammar);
+        const seu::yacc::GrammarAnalysis analysis = seu::yacc::analyze_grammar(grammar);
+        mark_stage("Step4 预处理/分析完成");
+
+        const seu::yacc::FirstSetResult first_result = seu::yacc::compute_first_sets(grammar);
+        const seu::yacc::FirstSetValidationReport first_validation =
+            seu::yacc::validate_first_sets(grammar, first_result);
+        mark_stage("Step5 First 集完成");
+
+        const seu::yacc::LR1Step6Result lr1_result = seu::yacc::build_step6_lr1_items(grammar, first_result);
+        const seu::yacc::LR1Step6ValidationReport lr1_validation =
+            seu::yacc::validate_step6_lr1_items(grammar, first_result, lr1_result);
+        mark_stage("Step6 LR(1) I0 完成");
+
+        const seu::yacc::LR1Step7Result lr1_step7_result =
+            seu::yacc::build_step7_lr1_canonical_collection(grammar, first_result, &lr1_result);
+        const seu::yacc::LR1Step7ValidationReport lr1_step7_validation =
+            seu::yacc::validate_step7_lr1_canonical_collection(grammar, first_result, lr1_step7_result);
+        mark_stage("Step7 LR(1) 规范族完成");
+
+        const seu::yacc::LR1Step8Result lr1_step8_result =
+            seu::yacc::build_step8_lr1_parsing_table(grammar, lr1_step7_result);
+        const seu::yacc::LR1Step8ValidationReport lr1_step8_validation =
+            seu::yacc::validate_step8_lr1_parsing_table(grammar, lr1_step7_result, lr1_step8_result);
+        mark_stage("Step8 LR(1) 分析表完成");
+
+        const seu::yacc::LR1Step10Result step10_result =
+            seu::yacc::build_step10_lalr_from_lr1(grammar, lr1_step7_result, lr1_step8_result);
+        const seu::yacc::LR1Step10ValidationReport step10_validation = seu::yacc::validate_step10_lalr_from_lr1(
+            grammar, lr1_step7_result, lr1_step8_result, step10_result);
+        mark_stage("Step10 LALR 构建完成");
+
+        bool run_step9 = !token_file_path.empty();
+        std::vector<seu::yacc::RuntimeToken> runtime_tokens;
+        seu::yacc::LRParseRunResult lr1_parse_result;
+        seu::yacc::LRParseRunResult lalr_parse_result;
+
+        if (run_validate) {
             if (!preprocess_report.passed) {
                 std::cout << "[第4步预处理] 失败\n";
                 for (const auto& e : preprocess_report.errors) {
@@ -502,9 +523,17 @@ int main(int argc, char** argv) {
                 }
                 return 10;
             }
-        } else {
-            std::cout << "[校验] 已跳过\n";
         }
+
+        if (run_step9) {
+            runtime_tokens = seu::yacc::load_runtime_tokens_from_file(grammar, token_file_path);
+            lr1_parse_result =
+                seu::yacc::run_step9_lr_parse(grammar, lr1_step8_result, runtime_tokens, max_parse_steps);
+            lalr_parse_result = seu::yacc::run_step9_lr_parse(
+                grammar, step10_result.lalr_step8_result, runtime_tokens, max_parse_steps);
+            mark_stage("Step9 LR1/LALR 运行时解析完成");
+        }
+
         print_preprocess_result(grammar, preprocess_report);
         print_first_set_result(grammar, first_result, first_validation);
         print_step6_lr1_result(grammar, lr1_result, lr1_validation);

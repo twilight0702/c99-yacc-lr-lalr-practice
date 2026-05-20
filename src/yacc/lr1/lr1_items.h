@@ -53,6 +53,9 @@ struct LR1Transition {
 struct LR1Step7Result {
     std::vector<LR1State> states;
     std::vector<LR1Transition> transitions;
+    // 与 transitions 一一对应，记录构建阶段计算得到的目标项集 key。
+    // 用于校验阶段复用，避免按边重复执行 goto 计算。
+    std::vector<std::string> transition_target_item_set_keys;
 };
 
 // 第 7 步校验报告：确保规范族完整、状态去重一致、goto 转移正确。
@@ -75,7 +78,7 @@ LR1Step6ValidationReport validate_step6_lr1_items(
 
 // 构造第 7 步核心产物：完整 LR(1) 项目集规范族与状态转移图。
 LR1Step7Result build_step7_lr1_canonical_collection(
-    const Grammar& grammar, const FirstSetResult& first_result);
+    const Grammar& grammar, const FirstSetResult& first_result, const LR1Step6Result* step6_hint = nullptr);
 
 // 校验第 7 步结果：
 // 1) 状态项合法性；

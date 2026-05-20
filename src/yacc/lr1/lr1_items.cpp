@@ -369,14 +369,19 @@ LR1Step6ValidationReport validate_step6_lr1_items(
 }
 
 LR1Step7Result build_step7_lr1_canonical_collection(
-    const Grammar& grammar, const FirstSetResult& first_result) {
+    const Grammar& grammar, const FirstSetResult& first_result, const LR1Step6Result* step6_hint) {
     LR1Step7Result result;
     if (grammar.productions.empty() || !is_valid_symbol_id(grammar, grammar.eof_symbol_id)) {
         return result;
     }
 
-    const std::vector<LR1Item> i0_kernel = {LR1Item{0, 0, grammar.eof_symbol_id}};
-    const std::vector<LR1Item> i0_closure = closure_of_items(grammar, first_result, i0_kernel, nullptr);
+    std::vector<LR1Item> i0_closure;
+    if (step6_hint != nullptr && !step6_hint->i0_closure_items.empty()) {
+        i0_closure = step6_hint->i0_closure_items;
+    } else {
+        const std::vector<LR1Item> i0_kernel = {LR1Item{0, 0, grammar.eof_symbol_id}};
+        i0_closure = closure_of_items(grammar, first_result, i0_kernel, nullptr);
+    }
     if (i0_closure.empty()) {
         return result;
     }
@@ -418,14 +423,28 @@ LR1Step7Result build_step7_lr1_canonical_collection(
             }
 
             result.transitions.push_back(LR1Transition{from_state_id, symbol_id, to_state_id});
+            result.transition_target_item_set_keys.push_back(key);
         }
     }
 
-    std::sort(result.transitions.begin(), result.transitions.end(),
-        [](const LR1Transition& a, const LR1Transition& b) {
-            return std::tie(a.from_state_id, a.symbol_id, a.to_state_id) <
-                   std::tie(b.from_state_id, b.symbol_id, b.to_state_id);
+    std::vector<std::pair<LR1Transition, std::string>> transition_rows;
+    transition_rows.reserve(result.transitions.size());
+    for (std::size_t i = 0; i < result.transitions.size(); ++i) {
+        transition_rows.push_back({result.transitions[i], result.transition_target_item_set_keys[i]});
+    }
+    std::sort(transition_rows.begin(), transition_rows.end(),
+        [](const std::pair<LR1Transition, std::string>& a, const std::pair<LR1Transition, std::string>& b) {
+            return std::tie(a.first.from_state_id, a.first.symbol_id, a.first.to_state_id) <
+                   std::tie(b.first.from_state_id, b.first.symbol_id, b.first.to_state_id);
         });
+    result.transitions.clear();
+    result.transition_target_item_set_keys.clear();
+    result.transitions.reserve(transition_rows.size());
+    result.transition_target_item_set_keys.reserve(transition_rows.size());
+    for (const auto& row : transition_rows) {
+        result.transitions.push_back(row.first);
+        result.transition_target_item_set_keys.push_back(row.second);
+    }
 
     return result;
 }
@@ -472,7 +491,10 @@ LR1Step7ValidationReport validate_step7_lr1_canonical_collection(
         }
     }
 
-    for (const auto& edge : result.transitions) {
+    const bool have_cached_transition_keys =
+        result.transition_target_item_set_keys.size() == result.transitions.size();
+    for (std::size_t edge_idx = 0; edge_idx < result.transitions.size(); ++edge_idx) {
+        const auto& edge = result.transitions[edge_idx];
         if (edge.from_state_id < 0 || edge.from_state_id >= static_cast<int>(result.states.size())) {
             report.errors.push_back("存在非法转移源状态编号。");
             break;
@@ -486,11 +508,17 @@ LR1Step7ValidationReport validate_step7_lr1_canonical_collection(
             break;
         }
 
-        const auto& from_items = result.states[edge.from_state_id].items;
         const auto& to_items = result.states[edge.to_state_id].items;
-        const std::vector<LR1Item> expected_items =
-            goto_of_items(grammar, first_result, from_items, edge.symbol_id);
-        if (build_item_set_key(expected_items) != build_item_set_key(to_items)) {
+        std::string expected_key;
+        if (have_cached_transition_keys) {
+            expected_key = result.transition_target_item_set_keys[edge_idx];
+        } else {
+            const auto& from_items = result.states[edge.from_state_id].items;
+            const std::vector<LR1Item> expected_items =
+                goto_of_items(grammar, first_result, from_items, edge.symbol_id);
+            expected_key = build_item_set_key(expected_items);
+        }
+        if (expected_key != build_item_set_key(to_items)) {
             report.errors.push_back("存在 goto 与状态转移不一致的边。");
             break;
         }
