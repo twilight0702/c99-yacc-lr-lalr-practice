@@ -423,7 +423,7 @@ int main(int argc, char** argv) {
         auto mark_stage = [&](const std::string& label) {
             const auto now = std::chrono::steady_clock::now();
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - stage_start).count();
-            std::cout << "[进度] " << label << " (+" << ms << " ms)\n";
+            std::cout << "[进度] " << label << "（耗时 " << ms << " ms）\n";
             stage_start = now;
         };
 
