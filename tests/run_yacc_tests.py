@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""统一运行 YACC 测试 1/2/3/4。"""
+"""统一运行 YACC 测试 1/2/2f/3/4/5/6。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def run(cmd: list[str], cwd: pathlib.Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4")
+    parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4/5/6")
     parser.add_argument(
         "--tests",
         default="1,2,3,4",
@@ -81,6 +81,12 @@ def main() -> int:
         elif test_id == "4":
             test_name = "测试四（trace 不变式）"
             cmd = ["python3", "tests/scripts/test4_trace_invariants.py"]
+        elif test_id == "5":
+            test_name = "测试五（y.tab.h 与 %token 集合一致性）"
+            cmd = ["python3", "tests/scripts/test5_emit_y_tab_h_consistency.py"]
+        elif test_id == "6":
+            test_name = "测试六（token_cases.inc 与 y.tab.h 一致性）"
+            cmd = ["python3", "tests/scripts/test6_emit_token_cases_consistency.py"]
         else:
             log("WARN", f"忽略未知测试编号: {test_id}")
             continue

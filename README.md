@@ -133,6 +133,7 @@ python3 tests/run_yacc_tests.py --tests 1
 python3 tests/run_yacc_tests.py --tests 2 --strict-bison
 python3 tests/run_yacc_tests.py --tests 2f --strict-bison
 python3 tests/run_yacc_tests.py --tests 3,4
+python3 tests/run_yacc_tests.py --tests 5,6
 python3 tests/run_yacc_tests.py --tests 1 --update-golden
 ```
 
