@@ -123,7 +123,7 @@ npm run dev
 统一入口：
 
 ```bash
-python3 tests/run_yacc_tests.py --tests 1,2,2f,3,4 --strict-bison
+python3 tests/run_yacc_tests.py --tests 1,2,2f,3,4,5,6,7 --strict-bison
 ```
 
 常用子集：
@@ -134,6 +134,7 @@ python3 tests/run_yacc_tests.py --tests 2 --strict-bison
 python3 tests/run_yacc_tests.py --tests 2f --strict-bison
 python3 tests/run_yacc_tests.py --tests 3,4
 python3 tests/run_yacc_tests.py --tests 5,6
+python3 tests/run_yacc_tests.py --tests 7 --strict-bison
 python3 tests/run_yacc_tests.py --tests 1 --update-golden
 ```
 
@@ -211,14 +212,17 @@ scripts/
 
 ```text
 tests/
-├── run_yacc_tests.py                        # 测试总入口（1/2/2f/3/4）
+├── run_yacc_tests.py                        # 测试总入口（1/2/2f/3/4/5/6/7）
 ├── scripts/
 │   ├── _common.py                           # 公共工具与默认样例配置
 │   ├── test1_golden_regression.py           # 测试1：golden 快照回归
 │   ├── test2_bison_compare.py               # 测试2：行为对拍（bison）
 │   ├── test2_full_lalr_automaton_compare.py # 测试2f：完整状态机对拍
 │   ├── test3_table_consistency.py           # 测试3：分析表结构一致性
-│   └── test4_trace_invariants.py            # 测试4：解析 trace 不变量
+│   ├── test5_emit_y_tab_h_consistency.py    # 测试5：y.tab.h 与 %token 集合一致
+│   ├── test6_emit_token_cases_consistency.py # 测试6：token_cases.inc 一致性
+│   ├── test4_trace_invariants.py            # 测试4：解析 trace 不变量
+│   └── test7_bison_tab_h_compare.py         # 测试7：y.tab.h 与 bison 对拍
 ├── golden/
 │   └── test1/                               # 测试1 基线快照数据
 └── out/                                     # 测试运行输出与报告

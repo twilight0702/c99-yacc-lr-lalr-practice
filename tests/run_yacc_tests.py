@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""统一运行 YACC 测试 1/2/2f/3/4/5/6。"""
+"""统一运行 YACC 测试 1/2/2f/3/4/5/6/7。"""
 
 from __future__ import annotations
 
@@ -43,14 +43,14 @@ def run(cmd: list[str], cwd: pathlib.Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4/5/6")
+    parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4/5/6/7")
     parser.add_argument(
         "--tests",
         default="1,2,3,4",
         help="要运行的测试编号，逗号分隔，例如 1,2,2f,4",
     )
     parser.add_argument("--workdir", default=".", help="项目根目录")
-    parser.add_argument("--strict-bison", action="store_true", help="测试2缺依赖时直接失败")
+    parser.add_argument("--strict-bison", action="store_true", help="测试2/2f/7缺依赖时直接失败")
     parser.add_argument("--update-golden", action="store_true", help="测试1更新 golden 快照")
     args = parser.parse_args()
 
@@ -87,6 +87,11 @@ def main() -> int:
         elif test_id == "6":
             test_name = "测试六（token_cases.inc 与 y.tab.h 一致性）"
             cmd = ["python3", "tests/scripts/test6_emit_token_cases_consistency.py"]
+        elif test_id == "7":
+            test_name = "测试七（导出 y.tab.h 与 bison 头文件对拍）"
+            cmd = ["python3", "tests/scripts/test7_bison_tab_h_compare.py"]
+            if args.strict_bison:
+                cmd.append("--strict")
         else:
             log("WARN", f"忽略未知测试编号: {test_id}")
             continue
