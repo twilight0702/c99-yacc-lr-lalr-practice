@@ -34,19 +34,23 @@ struct LR1ItemKeyEq {
     }
 };
 
+// 函数说明：判断符号 ID 是否有效。
 bool is_valid_symbol_id(const Grammar& grammar, int symbol_id) {
     return symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size());
 }
 
+// 函数说明：判断产生式 ID 是否有效。
 bool is_valid_production_id(const Grammar& grammar, int production_id) {
     return production_id >= 0 && production_id < static_cast<int>(grammar.productions.size());
 }
 
+// 函数说明：LR1Item 排序比较器，保证项集表示稳定。
 bool item_less(const LR1Item& a, const LR1Item& b) {
     return std::tie(a.production_id, a.dot_pos, a.lookahead_symbol_id) <
            std::tie(b.production_id, b.dot_pos, b.lookahead_symbol_id);
 }
 
+// 函数说明：构造 beta+a 序列，用于 closure 中 lookahead 的 First 传播。
 std::vector<int> build_beta_plus_lookahead(
     const Grammar& grammar, const LR1Item& item, int dot_symbol_index_in_rhs) {
     std::vector<int> sequence;
@@ -62,6 +66,7 @@ std::vector<int> build_beta_plus_lookahead(
     return sequence;
 }
 
+// 函数说明：对输入项集执行 LR(1) closure 扩张并返回去重排序结果。
 std::vector<LR1Item> closure_of_items(const Grammar& grammar, const FirstSetResult& first_result,
     const std::vector<LR1Item>& seed_items, std::vector<std::string>* notes) {
     std::vector<LR1Item> items;
@@ -136,6 +141,7 @@ std::vector<LR1Item> closure_of_items(const Grammar& grammar, const FirstSetResu
     return items;
 }
 
+// 函数说明：执行 goto(I, X) 计算并自动对结果做 closure。
 std::vector<LR1Item> goto_of_items(const Grammar& grammar, const FirstSetResult& first_result,
     const std::vector<LR1Item>& items, int transition_symbol_id) {
     std::vector<LR1Item> moved_items;
@@ -158,6 +164,7 @@ std::vector<LR1Item> goto_of_items(const Grammar& grammar, const FirstSetResult&
     return closure_of_items(grammar, first_result, moved_items, nullptr);
 }
 
+// 函数说明：将项集编码为稳定字符串键，用于状态去重。
 std::string build_item_set_key(const std::vector<LR1Item>& items) {
     std::ostringstream oss;
     for (const auto& item : items) {
@@ -166,6 +173,7 @@ std::string build_item_set_key(const std::vector<LR1Item>& items) {
     return oss.str();
 }
 
+// 函数说明：收集状态项中 dot 后可转移的符号集合。
 std::set<int> collect_transition_symbols(const Grammar& grammar, const std::vector<LR1Item>& items) {
     std::set<int> transition_symbols;
     for (const LR1Item& item : items) {
@@ -181,6 +189,7 @@ std::set<int> collect_transition_symbols(const Grammar& grammar, const std::vect
     return transition_symbols;
 }
 
+// 函数说明：校验单个 LR(1) 项的结构合法性。
 bool is_item_valid(const Grammar& grammar, const LR1Item& item) {
     if (!is_valid_production_id(grammar, item.production_id)) {
         return false;
@@ -195,6 +204,7 @@ bool is_item_valid(const Grammar& grammar, const LR1Item& item) {
     return true;
 }
 
+// 函数说明：将符号 ID 集合拼接为名称文本，便于日志展示。
 std::string join_symbol_names(const Grammar& grammar, const std::set<int>& symbol_ids) {
     std::ostringstream oss;
     bool first = true;
@@ -214,6 +224,7 @@ std::string join_symbol_names(const Grammar& grammar, const std::set<int>& symbo
 
 }  // namespace
 
+// 函数说明：将 LR(1) 项格式化为可读字符串。
 std::string format_lr1_item(const Grammar& grammar, const LR1Item& item) {
     if (!is_valid_production_id(grammar, item.production_id)) {
         return "[invalid item]";
@@ -244,6 +255,7 @@ std::string format_lr1_item(const Grammar& grammar, const LR1Item& item) {
     return oss.str();
 }
 
+// 函数说明：构建第6步结果（I0/closure/goto 样例与lookahead说明）。
 LR1Step6Result build_step6_lr1_items(const Grammar& grammar, const FirstSetResult& first_result) {
     LR1Step6Result result;
 
@@ -274,6 +286,7 @@ LR1Step6Result build_step6_lr1_items(const Grammar& grammar, const FirstSetResul
     return result;
 }
 
+// 函数说明：校验第6步结果的项合法性、闭包完备性和去重性。
 LR1Step6ValidationReport validate_step6_lr1_items(
     const Grammar& grammar, const FirstSetResult& first_result, const LR1Step6Result& result) {
     LR1Step6ValidationReport report;
@@ -375,6 +388,7 @@ LR1Step6ValidationReport validate_step6_lr1_items(
     return report;
 }
 
+// 函数说明：构建第7步 LR(1) 规范族（状态集与转移集）。
 LR1Step7Result build_step7_lr1_canonical_collection(
     const Grammar& grammar, const FirstSetResult& first_result, const LR1Step6Result* step6_hint) {
     LR1Step7Result result;
@@ -456,6 +470,7 @@ LR1Step7Result build_step7_lr1_canonical_collection(
     return result;
 }
 
+// 函数说明：校验第7步规范族完整性与转移正确性。
 LR1Step7ValidationReport validate_step7_lr1_canonical_collection(
     const Grammar& grammar, const FirstSetResult& first_result, const LR1Step7Result& result) {
     LR1Step7ValidationReport report;

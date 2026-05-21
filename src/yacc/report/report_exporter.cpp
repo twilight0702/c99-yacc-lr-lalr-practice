@@ -18,6 +18,7 @@
 namespace seu::yacc {
 namespace {
 
+// 函数说明：将符号类型枚举转换为导出文本。
 std::string symbol_kind_to_text(SymbolKind kind) {
     switch (kind) {
         case SymbolKind::Terminal:
@@ -30,6 +31,7 @@ std::string symbol_kind_to_text(SymbolKind kind) {
     return "Unknown";
 }
 
+// 函数说明：将文本内容写入指定文件路径（失败时抛异常）。
 void write_text_file(const std::filesystem::path& path, const std::string& content) {
     std::ofstream out(path);
     if (!out.is_open()) {
@@ -40,6 +42,7 @@ void write_text_file(const std::filesystem::path& path, const std::string& conte
 
 }  // namespace
 
+// 函数说明：统计文法分析摘要（动作数、未使用终结符、不可达非终结符）。
 GrammarAnalysis analyze_grammar(const Grammar& grammar) {
     GrammarAnalysis result;
 
@@ -96,54 +99,63 @@ GrammarAnalysis analyze_grammar(const Grammar& grammar) {
     return result;
 }
 
+// 函数说明：生成 step3 默认导出目录路径。
 std::string make_default_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step3" / stem).string();
 }
 
+// 函数说明：生成 step4 默认导出目录路径。
 std::string make_default_step4_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step4" / stem).string();
 }
 
+// 函数说明：生成 step5 默认导出目录路径。
 std::string make_default_step5_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step5" / stem).string();
 }
 
+// 函数说明：生成 step6 默认导出目录路径。
 std::string make_default_step6_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step6" / stem).string();
 }
 
+// 函数说明：生成 step7 默认导出目录路径。
 std::string make_default_step7_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step7" / stem).string();
 }
 
+// 函数说明：生成 step8 默认导出目录路径。
 std::string make_default_step8_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step8" / stem).string();
 }
 
+// 函数说明：生成 step9 默认导出目录路径。
 std::string make_default_step9_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step9" / stem).string();
 }
 
+// 函数说明：生成 step10 默认导出目录路径。
 std::string make_default_step10_export_dir(const std::string& input_path) {
     const std::filesystem::path p(input_path);
     const std::string stem = p.stem().string().empty() ? "input" : p.stem().string();
     return (std::filesystem::path("artifacts") / "yacc" / "step10" / stem).string();
 }
 
+// 函数说明：导出基础文法报告（summary/raw/analysis）。
 void export_report(
     const Grammar& grammar, const GrammarAnalysis& analysis, const std::string& output_dir) {
     const std::filesystem::path root(output_dir);
@@ -219,6 +231,7 @@ void export_report(
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第4步预处理阶段报告。
 void export_step4_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const std::string& output_dir) {
     const std::filesystem::path root(output_dir);
@@ -340,6 +353,7 @@ void export_step4_report(const Grammar& grammar, const GrammarAnalysis& analysis
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第5步 First 集计算与校验报告。
 void export_step5_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const std::string& output_dir) {
@@ -508,6 +522,7 @@ void export_step5_report(const Grammar& grammar, const GrammarAnalysis& analysis
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第6步 I0/closure/goto 结果与校验报告。
 void export_step6_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_result,
@@ -619,6 +634,7 @@ void export_step6_report(const Grammar& grammar, const GrammarAnalysis& analysis
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第7步 LR(1) 规范族状态机与校验报告。
 void export_step7_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
@@ -737,6 +753,7 @@ void export_step7_report(const Grammar& grammar, const GrammarAnalysis& analysis
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第8步 Action/Goto 表与冲突消解报告。
 void export_step8_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
@@ -903,6 +920,7 @@ void export_step8_report(const Grammar& grammar, const GrammarAnalysis& analysis
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第9步运行时 trace、规约序列与错误信息报告。
 void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,
@@ -1095,6 +1113,7 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     write_text_file(analysis_dir / "report.txt", report);
 }
 
+// 函数说明：导出第10步 LALR 合并结果与双表对比报告。
 void export_step10_report(const Grammar& grammar, const GrammarAnalysis& analysis,
     const GrammarPreprocessReport& preprocess_report, const FirstSetResult& first_result,
     const FirstSetValidationReport& first_validation, const LR1Step6Result& lr1_step6_result,

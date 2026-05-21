@@ -15,14 +15,17 @@
 namespace seu::yacc {
 namespace {
 
+// 函数说明：判断符号 ID 是否有效。
 bool is_valid_symbol_id(const Grammar& grammar, int symbol_id) {
     return symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size());
 }
 
+// 函数说明：判断状态 ID 是否在 step7 结果范围内。
 bool is_valid_state_id(const LR1Step7Result& step7_result, int state_id) {
     return state_id >= 0 && state_id < static_cast<int>(step7_result.states.size());
 }
 
+// 函数说明：判断符号是否可作为 Action 表列（终结符或特殊符号）。
 bool is_terminal_symbol(const Grammar& grammar, int symbol_id) {
     if (!is_valid_symbol_id(grammar, symbol_id)) {
         return false;
@@ -31,6 +34,7 @@ bool is_terminal_symbol(const Grammar& grammar, int symbol_id) {
            grammar.symbols[symbol_id].kind == SymbolKind::Special;
 }
 
+// 函数说明：判断符号是否为非终结符（Goto 表列）。
 bool is_nonterminal_symbol(const Grammar& grammar, int symbol_id) {
     if (!is_valid_symbol_id(grammar, symbol_id)) {
         return false;
@@ -38,6 +42,7 @@ bool is_nonterminal_symbol(const Grammar& grammar, int symbol_id) {
     return grammar.symbols[symbol_id].kind == SymbolKind::Nonterminal;
 }
 
+// 函数说明：根据两个动作条目推断冲突类型文本。
 std::string conflict_type_of(
     const ParseActionEntry& existing, const ParseActionEntry& incoming) {
     if (existing.type == ParseActionType::Shift && incoming.type == ParseActionType::Reduce) {
@@ -70,11 +75,13 @@ std::string conflict_type_of(
     return "action/conflict";
 }
 
+// 函数说明：判断两个 Action 条目是否完全一致。
 bool same_action(const ParseActionEntry& a, const ParseActionEntry& b) {
     return std::tie(a.type, a.target_state_id, a.reduce_production_id) ==
            std::tie(b.type, b.target_state_id, b.reduce_production_id);
 }
 
+// 函数说明：收集某状态中与冲突符号相关的 LR(1) 项，便于诊断输出。
 std::vector<LR1Item> collect_related_items(
     const LR1State& state, int symbol_id, const Grammar& grammar) {
     std::vector<LR1Item> related;
@@ -99,6 +106,7 @@ std::vector<LR1Item> collect_related_items(
     return related;
 }
 
+// 函数说明：向 Action 行插入动作，必要时执行冲突记录与消解。
 void insert_action_entry(const Grammar& grammar, const LR1State& state, int symbol_id,
     const ParseActionEntry& entry, std::unordered_map<int, ParseActionEntry>& action_row,
     std::vector<ParseTableConflict>& conflicts,
@@ -171,6 +179,7 @@ void insert_action_entry(const Grammar& grammar, const LR1State& state, int symb
 
 }  // namespace
 
+// 函数说明：将动作条目格式化为 sN/rN/acc 形式字符串。
 std::string format_parse_action_entry(const ParseActionEntry& entry) {
     switch (entry.type) {
         case ParseActionType::Shift:
@@ -183,6 +192,7 @@ std::string format_parse_action_entry(const ParseActionEntry& entry) {
     return "?";
 }
 
+// 函数说明：基于 step7 状态机构建第8步 Action/Goto 表及冲突信息。
 LR1Step8Result build_step8_lr1_parsing_table(
     const Grammar& grammar, const LR1Step7Result& step7_result) {
     LR1Step8Result result;
@@ -257,6 +267,7 @@ LR1Step8Result build_step8_lr1_parsing_table(
     return result;
 }
 
+// 函数说明：校验第8步构建结果的结构合法性与一致性。
 LR1Step8ValidationReport validate_step8_lr1_parsing_table(const Grammar& grammar,
     const LR1Step7Result& step7_result, const LR1Step8Result& step8_result) {
     LR1Step8ValidationReport report;

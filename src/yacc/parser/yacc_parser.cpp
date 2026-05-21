@@ -34,7 +34,7 @@ struct ProductionDraft {
     int source_line = 0;
 };
 
-// 读取整个文件文本。
+// 函数说明：读取并返回指定路径文件的完整文本内容。
 std::string read_text_file(const std::string& path) {
     std::ifstream input(path);
     if (!input.is_open()) {
@@ -46,14 +46,17 @@ std::string read_text_file(const std::string& path) {
     return buffer.str();
 }
 
+// 函数说明：判断字符是否可作为标识符首字符。
 bool is_identifier_start(char ch) {
     return std::isalpha(static_cast<unsigned char>(ch)) != 0 || ch == '_';
 }
 
+// 函数说明：判断字符是否可作为标识符后续字符。
 bool is_identifier_char(char ch) {
     return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_';
 }
 
+// 函数说明：去除字符串首尾空白并返回结果。
 std::string trim(const std::string& s) {
     size_t begin = 0;
     while (begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin])) != 0) {
@@ -67,7 +70,7 @@ std::string trim(const std::string& s) {
     return s.substr(begin, end - begin);
 }
 
-// 按行切分，并保留换行符，便于 section 拼接后仍保留原始结构。
+// 函数说明：按行切分文本并保留换行符，方便按段拼接时保持行号一致。
 std::vector<std::string> split_lines_keep_newline(const std::string& text) {
     std::vector<std::string> lines;
     std::string current;
@@ -84,7 +87,7 @@ std::vector<std::string> split_lines_keep_newline(const std::string& text) {
     return lines;
 }
 
-// 依据 %% 分割 Definitions / Rules / User 三段。
+// 函数说明：依据两个 %% 标记拆分 definitions/rules/user 三段内容。
 SectionRanges split_sections(const std::string& text) {
     const std::vector<std::string> lines = split_lines_keep_newline(text);
 
@@ -127,6 +130,7 @@ SectionRanges split_sections(const std::string& text) {
     return sections;
 }
 
+// 函数说明：若符号尚未注册，则按指定类型写入 grammar 符号表。
 void register_symbol_if_absent(
     Grammar& grammar, const std::string& name, SymbolKind kind, bool is_literal_char = false) {
     if (grammar.symbol_id_by_name.find(name) != grammar.symbol_id_by_name.end()) {
@@ -149,7 +153,7 @@ void register_symbol_if_absent(
     }
 }
 
-// 解析 Definitions 段，仅处理第 1 版范围：%token 和 %start。
+// 函数说明：解析 definitions 段，提取 %token 与 %start 声明。
 void parse_definitions(
     const std::string& definitions, int base_line, std::unordered_set<std::string>& token_names,
     std::string& start_symbol_name) {
@@ -218,14 +222,17 @@ struct RuleCursor {
     int column = 1;
 };
 
+// 函数说明：判断规则游标是否到达文本末尾。
 bool is_eof(const RuleCursor& c) {
     return c.pos >= c.text.size();
 }
 
+// 函数说明：查看当前游标字符，不移动位置。
 char peek(const RuleCursor& c) {
     return is_eof(c) ? '\0' : c.text[c.pos];
 }
 
+// 函数说明：消费一个字符并同步更新行列位置信息。
 char advance(RuleCursor& c) {
     if (is_eof(c)) {
         return '\0';
@@ -240,6 +247,7 @@ char advance(RuleCursor& c) {
     return ch;
 }
 
+// 函数说明：跳过空白字符（含换行），直到遇到非空白或 EOF。
 void skip_spaces(RuleCursor& c) {
     while (!is_eof(c)) {
         char ch = peek(c);
@@ -250,10 +258,12 @@ void skip_spaces(RuleCursor& c) {
     }
 }
 
+// 函数说明：按当前游标位置抛出带行列信息的 ParseError。
 [[noreturn]] void fail_here(const RuleCursor& c, const std::string& message, int base_line) {
     throw ParseError(base_line + c.line - 1, c.column, message);
 }
 
+// 函数说明：解析并返回一个标识符 token。
 std::string parse_identifier(RuleCursor& c, int base_line) {
     if (!is_identifier_start(peek(c))) {
         fail_here(c, "期望标识符", base_line);
@@ -266,7 +276,7 @@ std::string parse_identifier(RuleCursor& c, int base_line) {
     return out;
 }
 
-// 读取字符字面量，如 '(' 或 '\n'，内部按原样保存为完整字面量文本。
+// 函数说明：解析字符字面量（如 '('、'\\n'）并返回原始文本。
 std::string parse_char_literal(RuleCursor& c, int base_line) {
     if (peek(c) != '\'') {
         fail_here(c, "期望字符字面量", base_line);
@@ -292,7 +302,7 @@ std::string parse_char_literal(RuleCursor& c, int base_line) {
     fail_here(c, "字符字面量未闭合", base_line);
 }
 
-// 读取动作块，支持嵌套花括号和字符串/字符常量，防止误判结束位置。
+// 函数说明：解析动作代码块，正确处理嵌套大括号和字符串/字符常量。
 std::string parse_action_block(RuleCursor& c, int base_line) {
     if (peek(c) != '{') {
         fail_here(c, "期望动作块起始 `{`", base_line);
@@ -350,6 +360,7 @@ std::string parse_action_block(RuleCursor& c, int base_line) {
     fail_here(c, "动作块未闭合", base_line);
 }
 
+// 函数说明：将当前候选式缓存转换为草稿产生式并追加到结果数组。
 void append_production_from_buffer(const std::string& lhs_name, const std::vector<std::string>& rhs_names,
     const std::vector<bool>& rhs_is_literal, const ActionBlock& action, int source_line,
     std::vector<ProductionDraft>& out_drafts) {
@@ -362,7 +373,7 @@ void append_production_from_buffer(const std::string& lhs_name, const std::vecto
     out_drafts.push_back(std::move(draft));
 }
 
-// 解析 Rules 段，产出产生式草稿及 lhs 集合。
+// 函数说明：解析 rules 段并产出产生式草稿及 lhs 符号集合。
 void parse_rules(const std::string& rules, int base_line, std::vector<ProductionDraft>& drafts,
     std::unordered_set<std::string>& lhs_names) {
     RuleCursor c{rules, 0, 1, 1};
@@ -437,6 +448,7 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
     }
 }
 
+// 函数说明：将解析草稿收敛为最终 Grammar（注册符号、构建产生式与索引）。
 void finalize_grammar(Grammar& grammar, const std::unordered_set<std::string>& token_names,
     const std::unordered_set<std::string>& lhs_names, const std::vector<ProductionDraft>& drafts,
     const std::string& start_symbol_name) {
@@ -526,6 +538,7 @@ ParseError::ParseError(int line, int column, const std::string& message)
       line_(line),
       column_(column) {}
 
+// 函数说明：解析 .y 文件并返回完整 Grammar 对象。
 Grammar parse_yacc_file(const std::string& path) {
     const std::string content = read_text_file(path);
     const SectionRanges sections = split_sections(content);
@@ -547,4 +560,3 @@ Grammar parse_yacc_file(const std::string& path) {
 }
 
 }  // namespace seu::yacc
-

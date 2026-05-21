@@ -10,20 +10,24 @@
 namespace seu::yacc {
 namespace {
 
+// 函数说明：检查符号 ID 是否在 grammar.symbols 有效范围内。
 bool is_symbol_id_valid(const Grammar& grammar, int symbol_id) {
     return symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size());
 }
 
+// 函数说明：向预处理报告追加错误信息。
 void push_error(GrammarPreprocessReport& report, const std::string& text) {
     report.errors.push_back(text);
 }
 
+// 函数说明：向预处理报告追加告警信息。
 void push_warning(GrammarPreprocessReport& report, const std::string& text) {
     report.warnings.push_back(text);
 }
 
 }  // namespace
 
+// 函数说明：执行文法预处理并返回可用于后续步骤的校验报告。
 GrammarPreprocessReport preprocess_grammar(Grammar& grammar) {
     GrammarPreprocessReport report;
 

@@ -19,20 +19,24 @@
 namespace seu::yacc {
 namespace {
 
+// 函数说明：LR1Item 排序比较器，保证输出与键构造稳定。
 bool item_less(const LR1Item& a, const LR1Item& b) {
     return std::tie(a.production_id, a.dot_pos, a.lookahead_symbol_id) <
            std::tie(b.production_id, b.dot_pos, b.lookahead_symbol_id);
 }
 
+// 函数说明：LR1State 排序比较器，按 state_id 升序。
 bool state_less(const LR1State& a, const LR1State& b) {
     return a.state_id < b.state_id;
 }
 
+// 函数说明：状态转移排序比较器，便于稳定导出与校验。
 bool transition_less(const LR1Transition& a, const LR1Transition& b) {
     return std::tie(a.from_state_id, a.symbol_id, a.to_state_id) <
            std::tie(b.from_state_id, b.symbol_id, b.to_state_id);
 }
 
+// 函数说明：构造 LR(0) 核键（忽略 lookahead）用于分组合并状态。
 std::string build_lr0_core_key(const std::vector<LR1Item>& items) {
     std::vector<std::pair<int, int>> core_pairs;
     core_pairs.reserve(items.size());
@@ -49,6 +53,7 @@ std::string build_lr0_core_key(const std::vector<LR1Item>& items) {
     return oss.str();
 }
 
+// 函数说明：将同核状态的项集合并，并按项三元组去重。
 std::vector<LR1Item> merge_items_by_lr0_core_and_lookahead(const std::vector<LR1State>& source_states) {
     // key=(production_id,dot_pos), value=lookahead集合
     std::map<std::pair<int, int>, std::set<int>> lookaheads_by_core;
@@ -70,14 +75,17 @@ std::vector<LR1Item> merge_items_by_lr0_core_and_lookahead(const std::vector<LR1
     return merged;
 }
 
+// 函数说明：校验状态 ID 在给定状态数组中的有效性。
 bool is_valid_state_id(const std::vector<LR1State>& states, int state_id) {
     return state_id >= 0 && state_id < static_cast<int>(states.size());
 }
 
+// 函数说明：校验索引在整型数组中的有效性。
 bool is_valid_index(const std::vector<int>& values, int index) {
     return index >= 0 && index < static_cast<int>(values.size());
 }
 
+// 函数说明：构建 state_id 到状态对象指针的查找表。
 std::unordered_map<int, const LR1State*> build_state_ptr_by_id(const std::vector<LR1State>& states) {
     std::unordered_map<int, const LR1State*> by_id;
     by_id.reserve(states.size() * 2 + 1);
@@ -89,6 +97,7 @@ std::unordered_map<int, const LR1State*> build_state_ptr_by_id(const std::vector
 
 }  // namespace
 
+// 函数说明：执行第10步 LR(1)->LALR(1) 合并并构建 LALR 分析表。
 LR1Step10Result build_step10_lalr_from_lr1(
     const Grammar& grammar, const LR1Step7Result& lr1_step7_result, const LR1Step8Result& lr1_step8_result) {
     LR1Step10Result result;
@@ -218,6 +227,7 @@ LR1Step10Result build_step10_lalr_from_lr1(
     return result;
 }
 
+// 函数说明：校验第10步输出的映射、状态机与表结构一致性。
 LR1Step10ValidationReport validate_step10_lalr_from_lr1(const Grammar& grammar,
     const LR1Step7Result& lr1_step7_result, const LR1Step8Result& lr1_step8_result,
     const LR1Step10Result& step10_result) {
