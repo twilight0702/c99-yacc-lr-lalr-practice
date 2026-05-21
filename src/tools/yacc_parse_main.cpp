@@ -1,3 +1,9 @@
+/**
+ * 文件说明：yacc_parse_tool 的命令行入口。
+ * 负责解析子命令与参数，串联 Step4~Step10 的算法流程，
+ * 并提供控制台摘要输出、机器可读输出以及 y.tab.h/token_cases 导出能力。
+ */
+
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -19,6 +25,7 @@
 
 namespace {
 
+// 函数说明：将符号类别枚举转为可读文本，用于日志与导出展示。
 std::string symbol_kind_to_text(seu::yacc::SymbolKind kind) {
     switch (kind) {
         case seu::yacc::SymbolKind::Terminal:
@@ -31,6 +38,7 @@ std::string symbol_kind_to_text(seu::yacc::SymbolKind kind) {
     return "Unknown";
 }
 
+// 函数说明：打印文法解析后的总体统计信息。
 void print_summary(const seu::yacc::Grammar& grammar) {
     std::cout << "Yacc 文件解析成功\n";
     std::cout << "源文件: " << grammar.source_path << '\n';
@@ -45,6 +53,7 @@ void print_summary(const seu::yacc::Grammar& grammar) {
     }
 }
 
+// 函数说明：打印完整符号表，便于调试 symbol-id 映射问题。
 void print_symbols(const seu::yacc::Grammar& grammar) {
     std::cout << "\n[符号表]\n";
     for (const auto& sym : grammar.symbols) {
@@ -54,6 +63,7 @@ void print_symbols(const seu::yacc::Grammar& grammar) {
     }
 }
 
+// 函数说明：打印产生式列表（含行号和 action 标记）。
 void print_productions(const seu::yacc::Grammar& grammar) {
     std::cout << "\n[产生式表]\n";
     for (const auto& p : grammar.productions) {
@@ -108,6 +118,7 @@ bool validate_grammar(const seu::yacc::Grammar& grammar, std::string& error) {
     return true;
 }
 
+// 函数说明：输出第4步预处理摘要，包含增广产生式和告警数量。
 void print_preprocess_result(
     const seu::yacc::Grammar& grammar, const seu::yacc::GrammarPreprocessReport& report) {
     std::cout << "[第4步预处理] " << (report.passed ? "通过" : "失败") << '\n';
@@ -124,6 +135,7 @@ void print_preprocess_result(
     }
 }
 
+// 函数说明：输出 First 集阶段的关键统计信息。
 void print_first_set_result(const seu::yacc::Grammar& grammar, const seu::yacc::FirstSetResult& first_result,
     const seu::yacc::FirstSetValidationReport& first_validation) {
     std::cout << "[第5步 First 集] " << (first_validation.passed ? "通过" : "失败") << '\n';
@@ -139,6 +151,7 @@ void print_first_set_result(const seu::yacc::Grammar& grammar, const seu::yacc::
     }
 }
 
+// 函数说明：输出第6步 I0/closure/goto 的规模指标。
 void print_step6_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::LR1Step6Result& lr1_result,
     const seu::yacc::LR1Step6ValidationReport& lr1_validation) {
     std::cout << "[第6步 LR(1) 项/闭包/Goto] " << (lr1_validation.passed ? "通过" : "失败") << '\n';
@@ -159,6 +172,7 @@ void print_step6_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::
     std::cout << "lookahead 来源说明条目: " << lr1_result.lookahead_derivation_notes.size() << '\n';
 }
 
+// 函数说明：输出第7步 LR(1) 状态机规模与部分转移样例。
 void print_step7_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::LR1Step7Result& lr1_result,
     const seu::yacc::LR1Step7ValidationReport& lr1_validation) {
     std::cout << "[第7步 LR(1) 规范族/状态图] " << (lr1_validation.passed ? "通过" : "失败") << '\n';
@@ -178,6 +192,7 @@ void print_step7_lr1_result(const seu::yacc::Grammar& grammar, const seu::yacc::
     }
 }
 
+// 函数说明：输出第8步 Action/Goto 表规模及冲突统计。
 void print_step8_table_result(const seu::yacc::LR1Step8Result& step8_result,
     const seu::yacc::LR1Step8ValidationReport& step8_validation) {
     std::size_t action_entries = 0;
@@ -198,6 +213,7 @@ void print_step8_table_result(const seu::yacc::LR1Step8Result& step8_result,
     }
 }
 
+// 函数说明：输出第9步单次解析运行结果与错误上下文。
 void print_step9_parse_result(const seu::yacc::Grammar& grammar, const seu::yacc::LRParseRunResult& parse_result) {
     std::cout << "[第9步 LR 总控程序] " << (parse_result.accepted ? "accept" : "not-accept") << '\n';
     std::cout << "执行步数: " << parse_result.total_steps << '\n';
@@ -223,6 +239,7 @@ void print_step9_parse_result(const seu::yacc::Grammar& grammar, const seu::yacc
     }
 }
 
+// 函数说明：对比 LR1 与 LALR 两套运行时结果，观察语义一致性。
 void print_step9_parse_compare_result(
     const seu::yacc::LRParseRunResult& lr1_parse_result, const seu::yacc::LRParseRunResult& lalr_parse_result) {
     std::cout << "[第9步 LR1/LALR 对比] "
@@ -234,6 +251,7 @@ void print_step9_parse_compare_result(
               << ", LALR reductions=" << lalr_parse_result.reduction_production_ids.size() << '\n';
 }
 
+// 函数说明：输出第10步 LR(1)->LALR 合并统计和冲突变化。
 void print_step10_lalr_result(const seu::yacc::LR1Step10Result& step10_result,
     const seu::yacc::LR1Step10ValidationReport& step10_validation) {
     std::cout << "[第10步 LR(1)->LALR(1)] " << (step10_validation.passed ? "通过" : "失败") << '\n';
@@ -244,6 +262,7 @@ void print_step10_lalr_result(const seu::yacc::LR1Step10Result& step10_result,
     std::cout << "LALR(1) 冲突数: " << step10_result.lalr_conflict_count << '\n';
 }
 
+// 函数说明：机器可读输出 LALR 规约序列，用于对拍脚本。
 void print_machine_lalr_reduction_sequence(const seu::yacc::LRParseRunResult& lalr_parse_result) {
     std::cout << "__YACC_LALR_REDUCTIONS__:";
     for (std::size_t i = 0; i < lalr_parse_result.reduction_production_ids.size(); ++i) {
@@ -255,6 +274,7 @@ void print_machine_lalr_reduction_sequence(const seu::yacc::LRParseRunResult& la
     std::cout << '\n';
 }
 
+// 函数说明：机器可读输出第10步完整原始结构（状态/边/表/冲突）。
 void print_machine_step10_raw(const seu::yacc::Grammar& grammar, const seu::yacc::LR1Step10Result& step10_result) {
     std::cout << "__YACC_STEP10_RAW_BEGIN__\n";
 
@@ -348,6 +368,7 @@ void print_machine_step10_raw(const seu::yacc::Grammar& grammar, const seu::yacc
     std::cout << "__YACC_STEP10_RAW_END__\n";
 }
 
+// 函数说明：按文法文件中的定义顺序提取 %token 名称列表。
 std::vector<std::string> collect_declared_token_names_in_definition_order(const seu::yacc::Grammar& grammar) {
     std::ifstream in(grammar.source_path);
     if (!in.is_open()) {
@@ -399,6 +420,7 @@ std::vector<std::string> collect_declared_token_names_in_definition_order(const 
     return names;
 }
 
+// 函数说明：导出与 bison 风格兼容的 y.tab.h 头文件。
 void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& output_path) {
     const std::vector<std::string> token_names = collect_declared_token_names_in_definition_order(grammar);
     std::ofstream out(output_path);
@@ -448,6 +470,7 @@ void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& out
     out << "#endif /* !Y_TAB_H_INCLUDED */\n";
 }
 
+// 函数说明：导出 token 到字符串的 switch-case 代码片段。
 void emit_token_cases_include(const seu::yacc::Grammar& grammar, const std::string& output_path) {
     const std::vector<std::string> token_names = collect_declared_token_names_in_definition_order(grammar);
     std::ofstream out(output_path);
@@ -462,6 +485,24 @@ void emit_token_cases_include(const seu::yacc::Grammar& grammar, const std::stri
 }  // namespace
 
 int main(int argc, char** argv) {
+    // 1) 解析子命令模式（run / emit），未指定时默认 run。
+    enum class Mode {
+        Emit,
+        Run
+    };
+    Mode mode = Mode::Run;
+    int arg_begin = 1;
+    if (argc >= 2) {
+        const std::string sub = argv[1];
+        if (sub == "emit") {
+            mode = Mode::Emit;
+            arg_begin = 2;
+        } else if (sub == "run") {
+            mode = Mode::Run;
+            arg_begin = 2;
+        }
+    }
+
     std::string input_path = "c99.y";
     bool dump_symbols = false;
     bool dump_productions = false;
@@ -475,38 +516,66 @@ int main(int argc, char** argv) {
     std::string token_file_path;
     int max_parse_steps = 200000;
 
-    // 轻量参数解析：
-    // yacc_parse_tool [input.y] [--dump-symbols] [--dump-productions]
-    //                [--export] [--export-dir <dir>] [--no-validate]
-    //                [--parse-tokens <file>] [--max-parse-steps <n>]
-    //                [--emit-y-tab-h <path>] [--emit-token-cases-inc <path>]
-    for (int i = 1; i < argc; ++i) {
+    // 2) 解析命令行选项并做模式兼容性校验。
+    // emit: yacc_parse_tool emit [input.y] --emit-y-tab-h <path> --emit-token-cases-inc <path>
+    // run:  yacc_parse_tool run  [input.y] [--dump-symbols] [--dump-productions]
+    //                            [--export] [--export-dir <dir>] [--no-validate]
+    //                            [--parse-tokens <file>] [--max-parse-steps <n>]
+    for (int i = arg_begin; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--dump-symbols") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --dump-symbols\n";
+                return 1;
+            }
             dump_symbols = true;
             continue;
         }
         if (arg == "--dump-productions") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --dump-productions\n";
+                return 1;
+            }
             dump_productions = true;
             continue;
         }
         if (arg == "--no-validate") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --no-validate\n";
+                return 1;
+            }
             run_validate = false;
             continue;
         }
         if (arg == "--export") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --export\n";
+                return 1;
+            }
             export_report = true;
             continue;
         }
         if (arg == "--dump-lalr-reductions-machine") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --dump-lalr-reductions-machine\n";
+                return 1;
+            }
             dump_lalr_reductions_machine = true;
             continue;
         }
         if (arg == "--dump-step10-raw-machine") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --dump-step10-raw-machine\n";
+                return 1;
+            }
             dump_step10_raw_machine = true;
             continue;
         }
         if (arg == "--export-dir") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --export-dir\n";
+                return 1;
+            }
             if (i + 1 >= argc) {
                 std::cerr << "--export-dir 缺少目录参数\n";
                 return 1;
@@ -516,6 +585,10 @@ int main(int argc, char** argv) {
             continue;
         }
         if (arg == "--parse-tokens") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --parse-tokens\n";
+                return 1;
+            }
             if (i + 1 >= argc) {
                 std::cerr << "--parse-tokens 缺少文件参数\n";
                 return 1;
@@ -524,6 +597,10 @@ int main(int argc, char** argv) {
             continue;
         }
         if (arg == "--max-parse-steps") {
+            if (mode == Mode::Emit) {
+                std::cerr << "emit 模式不支持 --max-parse-steps\n";
+                return 1;
+            }
             if (i + 1 >= argc) {
                 std::cerr << "--max-parse-steps 缺少数值参数\n";
                 return 1;
@@ -532,6 +609,10 @@ int main(int argc, char** argv) {
             continue;
         }
         if (arg == "--emit-y-tab-h") {
+            if (mode == Mode::Run) {
+                std::cerr << "run 模式不支持 --emit-y-tab-h，请使用 emit 子命令\n";
+                return 1;
+            }
             if (i + 1 >= argc) {
                 std::cerr << "--emit-y-tab-h 缺少文件参数\n";
                 return 1;
@@ -540,6 +621,10 @@ int main(int argc, char** argv) {
             continue;
         }
         if (arg == "--emit-token-cases-inc") {
+            if (mode == Mode::Run) {
+                std::cerr << "run 模式不支持 --emit-token-cases-inc，请使用 emit 子命令\n";
+                return 1;
+            }
             if (i + 1 >= argc) {
                 std::cerr << "--emit-token-cases-inc 缺少文件参数\n";
                 return 1;
@@ -550,7 +635,13 @@ int main(int argc, char** argv) {
         input_path = arg;
     }
 
+    if (mode == Mode::Emit && emit_y_tab_h_path.empty() && emit_token_cases_inc_path.empty()) {
+        std::cerr << "emit 模式至少需要一个导出参数：--emit-y-tab-h 或 --emit-token-cases-inc\n";
+        return 1;
+    }
+
     try {
+        // 3) 执行主流程：解析文法 -> 构建各步结果 -> 可选运行时解析与导出。
         auto stage_start = std::chrono::steady_clock::now();
         auto mark_stage = [&](const std::string& label) {
             const auto now = std::chrono::steady_clock::now();
@@ -559,6 +650,7 @@ int main(int argc, char** argv) {
             stage_start = now;
         };
 
+        // 3.1 读取并解析 .y 文法。
         seu::yacc::Grammar grammar = seu::yacc::parse_yacc_file(input_path);
         if (!emit_y_tab_h_path.empty()) {
             emit_y_tab_header(grammar, emit_y_tab_h_path);
@@ -568,6 +660,12 @@ int main(int argc, char** argv) {
             emit_token_cases_include(grammar, emit_token_cases_inc_path);
             std::cout << "[导出] token_cases.inc 已写入: " << emit_token_cases_inc_path << '\n';
         }
+
+        // emit 模式只做导出，不进入后续算法流水线。
+        if (mode == Mode::Emit) {
+            return 0;
+        }
+
         print_summary(grammar);
         mark_stage("Step1-3 解析输入完成");
 
@@ -583,6 +681,7 @@ int main(int argc, char** argv) {
             std::cout << "[校验] 已跳过\n";
         }
 
+        // 3.2 执行 Step4~Step10 的算法流水线。
         const seu::yacc::GrammarPreprocessReport preprocess_report = seu::yacc::preprocess_grammar(grammar);
         const seu::yacc::GrammarAnalysis analysis = seu::yacc::analyze_grammar(grammar);
         mark_stage("Step4 预处理/分析完成");
@@ -620,6 +719,7 @@ int main(int argc, char** argv) {
         seu::yacc::LRParseRunResult lr1_parse_result;
         seu::yacc::LRParseRunResult lalr_parse_result;
 
+        // 3.3 严格模式下逐步校验，失败即早停并返回对应步骤码。
         if (run_validate) {
             if (!preprocess_report.passed) {
                 std::cout << "[第4步预处理] 失败\n";
@@ -665,6 +765,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        // 3.4 若提供 token 文件，则运行第9步解析（LR1 与 LALR 两套表）。
         if (run_step9) {
             runtime_tokens = seu::yacc::load_runtime_tokens_from_file(grammar, token_file_path);
             lr1_parse_result =
@@ -702,6 +803,7 @@ int main(int argc, char** argv) {
         if (dump_productions) {
             print_productions(grammar);
         }
+        // 3.5 需要时导出报告目录（step9 或 step10 版本）。
         if (export_report) {
             if (export_dir.empty()) {
                 export_dir = run_step9 ? seu::yacc::make_default_step9_export_dir(input_path)

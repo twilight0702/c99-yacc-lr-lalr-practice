@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现 First 集相关算法。
+ * 包括全符号 First 集不动点迭代、符号串 First 计算、
+ * 以及 First 集正确性校验逻辑。
+ */
+
+
 #include "yacc/first/first_set.h"
 
 #include <algorithm>
@@ -5,10 +12,12 @@
 namespace seu::yacc {
 namespace {
 
+// 函数说明：判断符号 ID 是否在 grammar.symbols 有效范围内。
 bool is_valid_symbol_id(const Grammar& grammar, int symbol_id) {
     return symbol_id >= 0 && symbol_id < static_cast<int>(grammar.symbols.size());
 }
 
+// 函数说明：将 source 中除 epsilon 外的符号并入 target，并回传是否发生变化。
 void add_non_epsilon_from_source_to_target(
     std::set<int>& target, const std::set<int>& source, int epsilon_symbol_id, bool& changed) {
     for (int sid : source) {
@@ -24,6 +33,7 @@ void add_non_epsilon_from_source_to_target(
 
 }  // namespace
 
+// 函数说明：执行全局 First 集不动点迭代，返回每个符号的 First 结果。
 FirstSetResult compute_first_sets(const Grammar& grammar) {
     FirstSetResult result;
     result.first_sets_by_symbol_id.resize(grammar.symbols.size());
@@ -110,6 +120,7 @@ FirstSetResult compute_first_sets(const Grammar& grammar) {
     return result;
 }
 
+// 函数说明：计算符号串（从 start_index 开始）的 First 集。
 std::set<int> compute_first_of_sequence(const Grammar& grammar, const FirstSetResult& result,
     const std::vector<int>& symbol_ids, std::size_t start_index) {
     std::set<int> first_sequence;
@@ -140,6 +151,7 @@ std::set<int> compute_first_of_sequence(const Grammar& grammar, const FirstSetRe
     return first_sequence;
 }
 
+// 函数说明：按 First 集不变量规则校验计算结果并输出报告。
 FirstSetValidationReport validate_first_sets(const Grammar& grammar, const FirstSetResult& result) {
     FirstSetValidationReport report;
 

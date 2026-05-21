@@ -13,6 +13,7 @@ from _common import run_cmd
 
 
 def fail(msg: str) -> int:
+    """输出失败信息并返回统一错误码。"""
     print(f"FAIL: {msg}")
     return 1
 
@@ -42,6 +43,7 @@ def parse_tokens_from_y_tab_h(y_tab_h_path: pathlib.Path) -> set[str]:
 
 
 def main() -> int:
+    """脚本主入口：组织流程并给出最终退出码。"""
     parser = argparse.ArgumentParser(description="测试5：y.tab.h token 集合一致性")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
     parser.add_argument("--grammar", default="c99.y", help=".y 文法路径")

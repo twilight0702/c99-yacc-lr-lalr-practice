@@ -14,6 +14,7 @@ from _common import run_cmd
 
 
 def fail(msg: str) -> int:
+    """输出失败信息并返回统一错误码。"""
     print(f"FAIL: {msg}")
     return 1
 
@@ -43,6 +44,7 @@ def has_marker(header_text: str, marker: str) -> bool:
 
 
 def main() -> int:
+    """脚本主入口：组织流程并给出最终退出码。"""
     parser = argparse.ArgumentParser(description="测试7：导出 y.tab.h 与 bison 头文件对拍")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
     parser.add_argument("--grammar", default="c99.y", help=".y 文法路径")

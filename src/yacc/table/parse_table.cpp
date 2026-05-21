@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现第8步 Action/Goto 分析表构造。
+ * 负责根据 LR(1) 状态机生成表项、检测并记录冲突，
+ * 按既定策略消解冲突并进行结果校验。
+ */
+
+
 #include "yacc/table/parse_table.h"
 
 #include <algorithm>

@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现文法预处理阶段。
+ * 负责重建 lhs->productions 索引、检查增广文法关键字段，
+ * 并生成用于后续步骤的预处理报告。
+ */
+
+
 #include "yacc/preprocess/grammar_preprocessor.h"
 
 namespace seu::yacc {

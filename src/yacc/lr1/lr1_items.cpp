@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现 LR(1) 项目集构造核心算法。
+ * 包括 closure/goto、I0 构造、第6步与第7步规范族构建，
+ * 以及对应结果的格式化与校验。
+ */
+
+
 #include "yacc/lr1/lr1_items.h"
 
 #include <algorithm>

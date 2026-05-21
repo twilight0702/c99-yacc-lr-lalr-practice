@@ -18,6 +18,7 @@ from _common import DEFAULT_CASES, run_cmd
 
 
 def log(level: str, message: str) -> None:
+    """打印带级别前缀的日志行。"""
     print(f"[{level}]{message}")
 
 
@@ -166,6 +167,7 @@ def parse_our_stdout_metrics(stdout: str) -> tuple[bool, bool, int, list[int]]:
 
 
 def main() -> int:
+    """脚本主入口：组织流程并给出最终退出码。"""
     parser = argparse.ArgumentParser(description="测试2：Bison 对拍")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
     parser.add_argument("--grammar", default="c99.y", help="文法文件路径")

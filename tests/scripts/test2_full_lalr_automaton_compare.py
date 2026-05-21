@@ -18,6 +18,7 @@ from _common import load_tsv, run_cmd
 
 
 def log(level: str, message: str) -> None:
+    """打印带级别前缀的日志行。"""
     print(f"[{level}]{message}")
 
 
@@ -351,6 +352,7 @@ def parse_our_automaton_from_stdout(stdout: str) -> tuple[
 
 
 def main() -> int:
+    """脚本主入口：组织流程并给出最终退出码。"""
     parser = argparse.ArgumentParser(description="测试2f：完整 LALR 状态机对拍")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
     parser.add_argument("--grammar", default="c99.y", help="文法路径")

@@ -12,26 +12,32 @@ from _common import DEFAULT_CASES, load_tsv, parse_kv_file, run_cmd
 
 
 def log(level: str, message: str) -> None:
+    """打印带级别前缀的日志行。"""
     print(f"[{level}] {message}")
 
 
 def fail(msg: str) -> int:
+    """输出失败信息并返回统一错误码。"""
     print(f"FAIL: {msg}")
     return 1
 
 
 def is_shift(action: str) -> bool:
+    """判断动作字符串是否为 shift（形如 s123）。"""
     return len(action) >= 2 and action[0] == "s" and action[1:].isdigit()
 
 
 def is_reduce(action: str) -> bool:
+    """判断动作字符串是否为 reduce（形如 r45）。"""
     return len(action) >= 2 and action[0] == "r" and action[1:].isdigit()
 
 
 def check_trace(rows: list[dict[str, str]], expected_accept: bool, case_name: str, flavor: str) -> tuple[bool, str]:
+    """校验单条 trace 是否满足 LR 运行时不变式并返回诊断信息。"""
     if not rows:
         return False, f"{case_name}/{flavor} trace 为空"
 
+    # 1) 基础字段合法性检查。
     for i, row in enumerate(rows):
         try:
             int(row["step"])
@@ -42,6 +48,7 @@ def check_trace(rows: list[dict[str, str]], expected_accept: bool, case_name: st
         except Exception:
             return False, f"{case_name}/{flavor} 第{i+1}行字段格式非法"
 
+    # 2) 相邻步输入指针不变式：shift 前进一格，reduce 不前进。
     for i in range(len(rows) - 1):
         cur = rows[i]
         nxt = rows[i + 1]
@@ -61,6 +68,7 @@ def check_trace(rows: list[dict[str, str]], expected_accept: bool, case_name: st
         else:
             return False, f"{case_name}/{flavor} 未知动作格式@row={i+1}: {action}"
 
+    # 3) 末步动作与用例预期一致性检查。
     last = rows[-1]
     if expected_accept:
         if last["action"] != "acc":
@@ -74,6 +82,7 @@ def check_trace(rows: list[dict[str, str]], expected_accept: bool, case_name: st
 
 
 def main() -> int:
+    """脚本主入口：组织流程并给出最终退出码。"""
     parser = argparse.ArgumentParser(description="测试4：解析 trace 语义不变式")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
     parser.add_argument("--grammar", default="c99.y", help=".y 文法路径")

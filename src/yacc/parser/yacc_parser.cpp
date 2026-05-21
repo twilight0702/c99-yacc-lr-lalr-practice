@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现 .y 文法文件解析器。
+ * 负责读取 definitions/rules/user code 三段内容，
+ * 解析符号与产生式并构建内部 Grammar 结构。
+ */
+
+
 #include "yacc/parser/yacc_parser.h"
 
 #include <cctype>

@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现第9步 LR 运行时解析器。
+ * 包括 token 文件加载、EOF 补齐、移进/归约主循环执行，
+ * 以及 trace 与错误信息的生成。
+ */
+
+
 #include "yacc/runtime/lr_parser.h"
 
 #include <algorithm>
@@ -10,6 +17,7 @@
 namespace seu::yacc {
 namespace {
 
+// 函数说明：去掉字符串首尾空白字符并返回副本。
 std::string trim_copy(const std::string& text) {
     std::size_t begin = 0;
     while (begin < text.size() && std::isspace(static_cast<unsigned char>(text[begin])) != 0) {
@@ -22,6 +30,7 @@ std::string trim_copy(const std::string& text) {
     return text.substr(begin, end - begin);
 }
 
+// 函数说明：根据符号 ID 获取符号名，越界时返回占位文本。
 std::string symbol_name_of(const Grammar& grammar, int symbol_id) {
     if (symbol_id < 0 || symbol_id >= static_cast<int>(grammar.symbols.size())) {
         return "<invalid>";
@@ -29,6 +38,7 @@ std::string symbol_name_of(const Grammar& grammar, int symbol_id) {
     return grammar.symbols[symbol_id].name;
 }
 
+// 函数说明：将状态栈序列格式化为可打印字符串。
 std::string join_state_stack(const std::vector<int>& state_stack) {
     std::ostringstream oss;
     for (std::size_t i = 0; i < state_stack.size(); ++i) {
@@ -40,6 +50,7 @@ std::string join_state_stack(const std::vector<int>& state_stack) {
     return oss.str();
 }
 
+// 函数说明：将符号栈序列格式化为可打印字符串。
 std::string join_symbol_stack(const Grammar& grammar, const std::vector<int>& symbol_stack) {
     std::ostringstream oss;
     for (std::size_t i = 0; i < symbol_stack.size(); ++i) {
@@ -51,6 +62,7 @@ std::string join_symbol_stack(const Grammar& grammar, const std::vector<int>& sy
     return oss.str();
 }
 
+// 函数说明：确保 token 序列以 EOF 结尾，缺失时自动追加。
 void ensure_eof_token(const Grammar& grammar, std::vector<RuntimeToken>& tokens) {
     if (!tokens.empty() && tokens.back().symbol_id == grammar.eof_symbol_id) {
         return;
@@ -64,6 +76,7 @@ void ensure_eof_token(const Grammar& grammar, std::vector<RuntimeToken>& tokens)
 
 }  // namespace
 
+// 函数说明：从 tokens 文本文件读取运行时输入序列并完成基本校验。
 std::vector<RuntimeToken> load_runtime_tokens_from_file(
     const Grammar& grammar, const std::string& token_file_path) {
     std::ifstream in(token_file_path);
@@ -120,6 +133,7 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
     return tokens;
 }
 
+// 函数说明：执行 LR 运行时移进/归约循环并生成 trace 与错误信息。
 LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result& step8_result,
     const std::vector<RuntimeToken>& input_tokens, int max_steps) {
     LRParseRunResult result;

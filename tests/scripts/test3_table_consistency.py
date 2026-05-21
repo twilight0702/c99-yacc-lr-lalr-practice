@@ -12,6 +12,7 @@ from _common import load_tsv, parse_kv_file, run_cmd
 
 
 def fail(msg: str) -> int:
+    """输出失败信息并返回统一错误码。"""
     print(f"FAIL: {msg}")
     return 1
 
@@ -79,6 +80,7 @@ def check_table(
 
 
 def main() -> int:
+    """脚本主入口：组织流程并给出最终退出码。"""
     parser = argparse.ArgumentParser(description="测试3：Action/Goto 表构造独立校验")
     parser.add_argument("--bin", default="./build/src/yacc_parse_tool", help="yacc_parse_tool 路径")
     parser.add_argument("--grammar", default="c99.y", help=".y 文法路径")

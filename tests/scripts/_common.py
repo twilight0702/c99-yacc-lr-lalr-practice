@@ -32,6 +32,7 @@ DEFAULT_CASES: list[TestCase] = [
 
 
 def parse_kv_file(path: pathlib.Path) -> dict[str, str]:
+    """读取 key=value 文本文件并解析为字典。"""
     result: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -43,9 +44,11 @@ def parse_kv_file(path: pathlib.Path) -> dict[str, str]:
 
 
 def load_tsv(path: pathlib.Path) -> list[dict[str, str]]:
+    """加载 TSV 文件并按列名返回字典行列表。"""
     with path.open("r", encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f, delimiter="\t"))
 
 
 def run_cmd(cmd: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    """在指定目录执行命令并捕获 stdout/stderr。"""
     return subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True)

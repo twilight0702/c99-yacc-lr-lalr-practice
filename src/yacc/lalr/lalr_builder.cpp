@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现 LR(1) 到 LALR(1) 的状态合并与表构造。
+ * 负责按 LR(0) 核分组、生成合并后状态机与 Action/Goto 表，
+ * 并输出第10步校验报告。
+ */
+
+
 #include "yacc/lalr/lalr_builder.h"
 
 #include <algorithm>

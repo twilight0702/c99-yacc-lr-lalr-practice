@@ -11,10 +11,12 @@ import sys
 
 
 def log(level: str, message: str) -> None:
+    """统一日志输出格式，便于 CI 检索。"""
     print(f"[{level}]{message}")
 
 
 def run(cmd: list[str], cwd: pathlib.Path) -> int:
+    """流式执行命令并实时转发输出，返回进程退出码。"""
     real_cmd = list(cmd)
     if real_cmd and real_cmd[0] == "python3" and (len(real_cmd) < 2 or real_cmd[1] != "-u"):
         real_cmd.insert(1, "-u")
@@ -43,6 +45,7 @@ def run(cmd: list[str], cwd: pathlib.Path) -> int:
 
 
 def main() -> int:
+    """解析参数并按编号顺序调度各子测试脚本。"""
     parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4/5/6/7")
     parser.add_argument(
         "--tests",
@@ -59,6 +62,7 @@ def main() -> int:
     test_ids = [x.strip() for x in args.tests.split(",") if x.strip()]
     rc_all = 0
 
+    # 逐个测试执行，保持失败不中断，最后统一汇总状态。
     for test_id in test_ids:
         if test_id == "1":
             test_name = "测试一（golden 回归）"

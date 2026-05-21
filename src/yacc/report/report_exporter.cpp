@@ -1,3 +1,10 @@
+/**
+ * 文件说明：实现各步骤报告导出逻辑。
+ * 负责将文法、状态机、分析表、trace 与统计信息写入
+ * summary/raw/analysis 目录结构，供测试与对拍脚本消费。
+ */
+
+
 #include "yacc/report/report_exporter.h"
 
 #include <algorithm>
