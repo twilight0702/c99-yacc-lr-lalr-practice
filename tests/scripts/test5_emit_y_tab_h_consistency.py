@@ -59,7 +59,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     y_tab_h = out_dir / "y.tab.h"
 
-    proc = run_cmd([args.bin, str(grammar), "--emit-y-tab-h", str(y_tab_h)], cwd=root)
+    proc = run_cmd([args.bin, "emit", str(grammar), "--emit-y-tab-h", str(y_tab_h)], cwd=root)
     if proc.returncode != 0:
         return fail(f"工具执行失败，exit={proc.returncode}\n{proc.stderr}\n{proc.stdout}")
 

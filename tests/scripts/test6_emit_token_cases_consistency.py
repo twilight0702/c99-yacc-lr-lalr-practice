@@ -68,6 +68,7 @@ def main() -> int:
     proc = run_cmd(
         [
             args.bin,
+            "emit",
             str(grammar),
             "--emit-y-tab-h",
             str(y_tab_h),

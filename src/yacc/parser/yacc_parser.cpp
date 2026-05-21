@@ -4,12 +4,12 @@
  * 解析符号与产生式并构建内部 Grammar 结构。
  */
 
-
 #include "yacc/parser/yacc_parser.h"
 
 #include <cctype>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -25,16 +25,22 @@ struct SectionRanges {
     int user_start_line = 1;
 };
 
-// 规则解析前的中间结构，先保留符号名字，之后统一分配 ID。
 struct ProductionDraft {
     std::string lhs_name;
     std::vector<std::string> rhs_symbol_names;
     std::vector<bool> rhs_is_literal_char;
     ActionBlock action;
+    std::string precedence_override_symbol_name;
     int source_line = 0;
 };
 
-// 函数说明：读取并返回指定路径文件的完整文本内容。
+struct DefinitionParseResult {
+    std::unordered_set<std::string> terminal_names;
+    std::unordered_map<std::string, std::string> symbol_type_tag_by_name;
+    std::unordered_map<std::string, PrecedenceDecl> precedence_by_symbol_name;
+    std::string union_block_raw;
+};
+
 std::string read_text_file(const std::string& path) {
     std::ifstream input(path);
     if (!input.is_open()) {
@@ -46,17 +52,14 @@ std::string read_text_file(const std::string& path) {
     return buffer.str();
 }
 
-// 函数说明：判断字符是否可作为标识符首字符。
 bool is_identifier_start(char ch) {
     return std::isalpha(static_cast<unsigned char>(ch)) != 0 || ch == '_';
 }
 
-// 函数说明：判断字符是否可作为标识符后续字符。
 bool is_identifier_char(char ch) {
     return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_';
 }
 
-// 函数说明：去除字符串首尾空白并返回结果。
 std::string trim(const std::string& s) {
     size_t begin = 0;
     while (begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin])) != 0) {
@@ -70,7 +73,6 @@ std::string trim(const std::string& s) {
     return s.substr(begin, end - begin);
 }
 
-// 函数说明：按行切分文本并保留换行符，方便按段拼接时保持行号一致。
 std::vector<std::string> split_lines_keep_newline(const std::string& text) {
     std::vector<std::string> lines;
     std::string current;
@@ -87,18 +89,15 @@ std::vector<std::string> split_lines_keep_newline(const std::string& text) {
     return lines;
 }
 
-// 函数说明：依据两个 %% 标记拆分 definitions/rules/user 三段内容。
 SectionRanges split_sections(const std::string& text) {
     const std::vector<std::string> lines = split_lines_keep_newline(text);
 
-    int marker_count = 0;
     int first_marker_line = -1;
     int second_marker_line = -1;
 
     for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
         const std::string normalized = trim(lines[i]);
         if (normalized == "%%") {
-            ++marker_count;
             if (first_marker_line < 0) {
                 first_marker_line = i + 1;
             } else if (second_marker_line < 0) {
@@ -107,22 +106,22 @@ SectionRanges split_sections(const std::string& text) {
         }
     }
 
-    if (marker_count < 2 || first_marker_line < 0 || second_marker_line < 0) {
-        throw ParseError(1, 1, "Yacc 文件必须包含两个 `%%` 分隔符");
+    if (first_marker_line < 0) {
+        throw ParseError(1, 1, "Yacc 文件至少需要一个 `%%` 分隔符");
     }
 
     SectionRanges sections;
     sections.definitions_start_line = 1;
     sections.rules_start_line = first_marker_line + 1;
-    sections.user_start_line = second_marker_line + 1;
+    sections.user_start_line = (second_marker_line > 0) ? (second_marker_line + 1) : (static_cast<int>(lines.size()) + 1);
 
     for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
         const int line_no = i + 1;
         if (line_no < first_marker_line) {
             sections.definitions += lines[i];
-        } else if (line_no > first_marker_line && line_no < second_marker_line) {
+        } else if (line_no > first_marker_line && (second_marker_line < 0 || line_no < second_marker_line)) {
             sections.rules += lines[i];
-        } else if (line_no > second_marker_line) {
+        } else if (second_marker_line > 0 && line_no > second_marker_line) {
             sections.user_subroutines += lines[i];
         }
     }
@@ -130,7 +129,6 @@ SectionRanges split_sections(const std::string& text) {
     return sections;
 }
 
-// 函数说明：若符号尚未注册，则按指定类型写入 grammar 符号表。
 void register_symbol_if_absent(
     Grammar& grammar, const std::string& name, SymbolKind kind, bool is_literal_char = false) {
     if (grammar.symbol_id_by_name.find(name) != grammar.symbol_id_by_name.end()) {
@@ -153,13 +151,94 @@ void register_symbol_if_absent(
     }
 }
 
-// 函数说明：解析 definitions 段，提取 %token 与 %start 声明。
-void parse_definitions(
-    const std::string& definitions, int base_line, std::unordered_set<std::string>& token_names,
+std::vector<std::string> tokenize_definition_tail(const std::string& text) {
+    std::vector<std::string> out;
+    std::string cur;
+    bool in_angle = false;
+    bool in_char = false;
+    bool escaped = false;
+
+    for (char ch : text) {
+        if (in_char) {
+            cur.push_back(ch);
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '\'') {
+                in_char = false;
+            }
+            continue;
+        }
+        if (in_angle) {
+            cur.push_back(ch);
+            if (ch == '>') {
+                in_angle = false;
+                out.push_back(cur);
+                cur.clear();
+            }
+            continue;
+        }
+        if (std::isspace(static_cast<unsigned char>(ch)) != 0) {
+            if (!cur.empty()) {
+                out.push_back(cur);
+                cur.clear();
+            }
+            continue;
+        }
+        if (ch == '<') {
+            if (!cur.empty()) {
+                out.push_back(cur);
+                cur.clear();
+            }
+            cur.push_back(ch);
+            in_angle = true;
+            continue;
+        }
+        if (ch == '\'') {
+            if (!cur.empty()) {
+                out.push_back(cur);
+                cur.clear();
+            }
+            cur.push_back(ch);
+            in_char = true;
+            continue;
+        }
+        cur.push_back(ch);
+    }
+    if (!cur.empty()) {
+        out.push_back(cur);
+    }
+    return out;
+}
+
+Associativity assoc_from_directive(const std::string& directive) {
+    if (directive == "%left") {
+        return Associativity::Left;
+    }
+    if (directive == "%right") {
+        return Associativity::Right;
+    }
+    if (directive == "%nonassoc") {
+        return Associativity::Nonassoc;
+    }
+    return Associativity::None;
+}
+
+std::string parse_type_tag_token(const std::string& token, int line) {
+    if (token.size() < 3 || token.front() != '<' || token.back() != '>') {
+        throw ParseError(line, 1, "类型标签格式非法，期望 <tag>");
+    }
+    return token.substr(1, token.size() - 2);
+}
+
+void parse_definitions(const std::string& definitions, int base_line, DefinitionParseResult& result,
     std::string& start_symbol_name) {
     const std::vector<std::string> lines = split_lines_keep_newline(definitions);
 
     bool in_code_block = false;
+    int precedence_level = 0;
+
     for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
         const int current_line = base_line + i;
         std::string line = lines[i];
@@ -184,17 +263,32 @@ void parse_definitions(
             continue;
         }
 
-        if (normalized.rfind("%token", 0) == 0) {
-            std::istringstream iss(normalized.substr(6));
-            std::string token;
-            bool found_any = false;
-            while (iss >> token) {
-                token_names.insert(token);
-                found_any = true;
+        if (normalized.rfind("%union", 0) == 0) {
+            // 保留 %union 原文并做基本括号配平。
+            std::string block;
+            int brace_depth = 0;
+            bool started = false;
+            int j = i;
+            for (; j < static_cast<int>(lines.size()); ++j) {
+                std::string chunk = lines[j];
+                block += chunk;
+                for (char ch : chunk) {
+                    if (ch == '{') {
+                        ++brace_depth;
+                        started = true;
+                    } else if (ch == '}') {
+                        --brace_depth;
+                    }
+                }
+                if (started && brace_depth == 0) {
+                    break;
+                }
             }
-            if (!found_any) {
-                throw ParseError(current_line, 1, "%token 后未找到任何 token");
+            if (!started || brace_depth != 0) {
+                throw ParseError(current_line, 1, "%union 代码块未正确闭合");
             }
+            result.union_block_raw = block;
+            i = j;
             continue;
         }
 
@@ -211,7 +305,53 @@ void parse_definitions(
             continue;
         }
 
-        // 其他指令在第一版中允许存在，但不处理。
+        if (normalized.rfind("%token", 0) == 0 || normalized.rfind("%left", 0) == 0 ||
+            normalized.rfind("%right", 0) == 0 || normalized.rfind("%nonassoc", 0) == 0 ||
+            normalized.rfind("%type", 0) == 0) {
+            const std::size_t first_space = normalized.find_first_of(" \t");
+            const std::string directive =
+                (first_space == std::string::npos) ? normalized : normalized.substr(0, first_space);
+            const std::string tail =
+                (first_space == std::string::npos) ? "" : trim(normalized.substr(first_space));
+            const std::vector<std::string> items = tokenize_definition_tail(tail);
+
+            std::string explicit_type_tag;
+            std::size_t pos = 0;
+            if (!items.empty() && items[0].size() >= 3 && items[0].front() == '<' && items[0].back() == '>') {
+                explicit_type_tag = parse_type_tag_token(items[0], current_line);
+                pos = 1;
+            }
+
+            if (pos >= items.size()) {
+                throw ParseError(current_line, 1, directive + " 后未找到符号列表");
+            }
+
+            if (directive == "%left" || directive == "%right" || directive == "%nonassoc") {
+                ++precedence_level;
+                PrecedenceDecl pd;
+                pd.level = precedence_level;
+                pd.assoc = assoc_from_directive(directive);
+                for (; pos < items.size(); ++pos) {
+                    const std::string& name = items[pos];
+                    result.terminal_names.insert(name);
+                    result.precedence_by_symbol_name[name] = pd;
+                }
+                continue;
+            }
+
+            for (; pos < items.size(); ++pos) {
+                const std::string& name = items[pos];
+                if (directive == "%token") {
+                    result.terminal_names.insert(name);
+                }
+                if (!explicit_type_tag.empty()) {
+                    result.symbol_type_tag_by_name[name] = explicit_type_tag;
+                }
+            }
+            continue;
+        }
+
+        // 其余 definitions 指令保留兼容，不阻断第一版与扩展版输入。
     }
 }
 
@@ -222,17 +362,14 @@ struct RuleCursor {
     int column = 1;
 };
 
-// 函数说明：判断规则游标是否到达文本末尾。
 bool is_eof(const RuleCursor& c) {
     return c.pos >= c.text.size();
 }
 
-// 函数说明：查看当前游标字符，不移动位置。
 char peek(const RuleCursor& c) {
     return is_eof(c) ? '\0' : c.text[c.pos];
 }
 
-// 函数说明：消费一个字符并同步更新行列位置信息。
 char advance(RuleCursor& c) {
     if (is_eof(c)) {
         return '\0';
@@ -247,7 +384,6 @@ char advance(RuleCursor& c) {
     return ch;
 }
 
-// 函数说明：跳过空白字符（含换行），直到遇到非空白或 EOF。
 void skip_spaces(RuleCursor& c) {
     while (!is_eof(c)) {
         char ch = peek(c);
@@ -258,12 +394,10 @@ void skip_spaces(RuleCursor& c) {
     }
 }
 
-// 函数说明：按当前游标位置抛出带行列信息的 ParseError。
 [[noreturn]] void fail_here(const RuleCursor& c, const std::string& message, int base_line) {
     throw ParseError(base_line + c.line - 1, c.column, message);
 }
 
-// 函数说明：解析并返回一个标识符 token。
 std::string parse_identifier(RuleCursor& c, int base_line) {
     if (!is_identifier_start(peek(c))) {
         fail_here(c, "期望标识符", base_line);
@@ -276,7 +410,6 @@ std::string parse_identifier(RuleCursor& c, int base_line) {
     return out;
 }
 
-// 函数说明：解析字符字面量（如 '('、'\\n'）并返回原始文本。
 std::string parse_char_literal(RuleCursor& c, int base_line) {
     if (peek(c) != '\'') {
         fail_here(c, "期望字符字面量", base_line);
@@ -302,7 +435,6 @@ std::string parse_char_literal(RuleCursor& c, int base_line) {
     fail_here(c, "字符字面量未闭合", base_line);
 }
 
-// 函数说明：解析动作代码块，正确处理嵌套大括号和字符串/字符常量。
 std::string parse_action_block(RuleCursor& c, int base_line) {
     if (peek(c) != '{') {
         fail_here(c, "期望动作块起始 `{`", base_line);
@@ -360,20 +492,20 @@ std::string parse_action_block(RuleCursor& c, int base_line) {
     fail_here(c, "动作块未闭合", base_line);
 }
 
-// 函数说明：将当前候选式缓存转换为草稿产生式并追加到结果数组。
 void append_production_from_buffer(const std::string& lhs_name, const std::vector<std::string>& rhs_names,
-    const std::vector<bool>& rhs_is_literal, const ActionBlock& action, int source_line,
+    const std::vector<bool>& rhs_is_literal, const ActionBlock& action,
+    const std::string& precedence_override_symbol_name, int source_line,
     std::vector<ProductionDraft>& out_drafts) {
     ProductionDraft draft;
     draft.lhs_name = lhs_name;
     draft.rhs_symbol_names = rhs_names;
     draft.rhs_is_literal_char = rhs_is_literal;
     draft.action = action;
+    draft.precedence_override_symbol_name = precedence_override_symbol_name;
     draft.source_line = source_line;
     out_drafts.push_back(std::move(draft));
 }
 
-// 函数说明：解析 rules 段并产出产生式草稿及 lhs 符号集合。
 void parse_rules(const std::string& rules, int base_line, std::vector<ProductionDraft>& drafts,
     std::unordered_set<std::string>& lhs_names) {
     RuleCursor c{rules, 0, 1, 1};
@@ -392,11 +524,12 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
         if (peek(c) != ':') {
             fail_here(c, "产生式左部后缺少 `:`", base_line);
         }
-        advance(c);  // consume :
+        advance(c);
 
         std::vector<std::string> rhs_buffer;
         std::vector<bool> rhs_literal_buffer;
         ActionBlock action_buffer;
+        std::string precedence_override_symbol_name;
 
         while (!is_eof(c)) {
             skip_spaces(c);
@@ -406,18 +539,19 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
 
             const char ch = peek(c);
             if (ch == '|') {
-                append_production_from_buffer(
-                    lhs_name, rhs_buffer, rhs_literal_buffer, action_buffer, rule_line, drafts);
+                append_production_from_buffer(lhs_name, rhs_buffer, rhs_literal_buffer, action_buffer,
+                    precedence_override_symbol_name, rule_line, drafts);
                 rhs_buffer.clear();
                 rhs_literal_buffer.clear();
                 action_buffer = ActionBlock{};
-                advance(c);  // consume |
+                precedence_override_symbol_name.clear();
+                advance(c);
                 continue;
             }
             if (ch == ';') {
-                append_production_from_buffer(
-                    lhs_name, rhs_buffer, rhs_literal_buffer, action_buffer, rule_line, drafts);
-                advance(c);  // consume ;
+                append_production_from_buffer(lhs_name, rhs_buffer, rhs_literal_buffer, action_buffer,
+                    precedence_override_symbol_name, rule_line, drafts);
+                advance(c);
                 break;
             }
             if (ch == '{') {
@@ -434,8 +568,28 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
                 rhs_literal_buffer.push_back(true);
                 continue;
             }
-            if (ch == '%' || ch == '<') {
-                fail_here(c, "第一版暂不支持该语法元素（如 %prec 或类型标签）", base_line);
+            if (ch == '%') {
+                advance(c);
+                const std::string directive = parse_identifier(c, base_line);
+                if (directive != "prec") {
+                    fail_here(c, "规则段仅支持 %prec 指令", base_line);
+                }
+                skip_spaces(c);
+                if (is_eof(c)) {
+                    fail_here(c, "%prec 后缺少符号", base_line);
+                }
+                if (!precedence_override_symbol_name.empty()) {
+                    fail_here(c, "同一候选式中不允许多个 %prec", base_line);
+                }
+                if (peek(c) == '\'') {
+                    precedence_override_symbol_name = parse_char_literal(c, base_line);
+                } else {
+                    precedence_override_symbol_name = parse_identifier(c, base_line);
+                }
+                continue;
+            }
+            if (ch == '<') {
+                fail_here(c, "规则段不支持类型标签", base_line);
             }
             if (is_identifier_start(ch)) {
                 rhs_buffer.push_back(parse_identifier(c, base_line));
@@ -448,21 +602,31 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
     }
 }
 
-// 函数说明：将解析草稿收敛为最终 Grammar（注册符号、构建产生式与索引）。
-void finalize_grammar(Grammar& grammar, const std::unordered_set<std::string>& token_names,
+int compute_default_precedence_symbol_id(const Grammar& grammar, const Production& p) {
+    for (int i = static_cast<int>(p.rhs_symbol_ids.size()) - 1; i >= 0; --i) {
+        const int sid = p.rhs_symbol_ids[i];
+        if (sid < 0 || sid >= static_cast<int>(grammar.symbols.size())) {
+            continue;
+        }
+        if (grammar.symbols[sid].kind == SymbolKind::Terminal) {
+            return sid;
+        }
+    }
+    return -1;
+}
+
+void finalize_grammar(Grammar& grammar, const DefinitionParseResult& def_result,
     const std::unordered_set<std::string>& lhs_names, const std::vector<ProductionDraft>& drafts,
     const std::string& start_symbol_name) {
-    // 1) 注册 token 终结符。
-    for (const auto& token : token_names) {
-        register_symbol_if_absent(grammar, token, SymbolKind::Terminal, false);
+    for (const auto& terminal : def_result.terminal_names) {
+        const bool is_literal = terminal.size() >= 2 && terminal.front() == '\'' && terminal.back() == '\'';
+        register_symbol_if_absent(grammar, terminal, SymbolKind::Terminal, is_literal);
     }
 
-    // 2) 注册非终结符（以 lhs 为准）。
     for (const auto& lhs : lhs_names) {
         register_symbol_if_absent(grammar, lhs, SymbolKind::Nonterminal, false);
     }
 
-    // 3) 注册特殊符号。
     register_symbol_if_absent(grammar, kEofSymbolName, SymbolKind::Special, false);
     register_symbol_if_absent(grammar, kEpsilonSymbolName, SymbolKind::Special, false);
     register_symbol_if_absent(grammar, kAugmentedStartName, SymbolKind::Special, false);
@@ -479,7 +643,6 @@ void finalize_grammar(Grammar& grammar, const std::unordered_set<std::string>& t
     }
     grammar.start_symbol_id = start_it->second;
 
-    // 4) 增广产生式放在第 0 条：S' -> start_symbol
     Production augmented;
     augmented.id = 0;
     augmented.lhs_symbol_id = grammar.augmented_start_symbol_id;
@@ -487,7 +650,6 @@ void finalize_grammar(Grammar& grammar, const std::unordered_set<std::string>& t
     augmented.source_line = 1;
     grammar.productions.push_back(augmented);
 
-    // 5) 录入普通产生式。
     int next_prod_id = 1;
     for (const auto& draft : drafts) {
         Production p;
@@ -508,22 +670,51 @@ void finalize_grammar(Grammar& grammar, const std::unordered_set<std::string>& t
             if (is_literal) {
                 register_symbol_if_absent(grammar, name, SymbolKind::Terminal, true);
             } else {
-                if (token_names.find(name) != token_names.end()) {
+                if (def_result.terminal_names.find(name) != def_result.terminal_names.end()) {
                     register_symbol_if_absent(grammar, name, SymbolKind::Terminal, false);
                 } else if (lhs_names.find(name) != lhs_names.end()) {
                     register_symbol_if_absent(grammar, name, SymbolKind::Nonterminal, false);
                 } else {
-                    throw ParseError(
-                        draft.source_line, 1, "规则右部出现未定义符号: " + name);
+                    throw ParseError(draft.source_line, 1, "规则右部出现未定义符号: " + name);
                 }
             }
             p.rhs_symbol_ids.push_back(grammar.symbol_id_by_name.at(name));
         }
 
+        if (!draft.precedence_override_symbol_name.empty()) {
+            auto it = grammar.symbol_id_by_name.find(draft.precedence_override_symbol_name);
+            if (it == grammar.symbol_id_by_name.end()) {
+                throw ParseError(draft.source_line, 1,
+                    "%prec 引用未定义终结符: " + draft.precedence_override_symbol_name);
+            }
+            p.precedence_symbol_id = it->second;
+        } else {
+            p.precedence_symbol_id = compute_default_precedence_symbol_id(grammar, p);
+        }
+
         grammar.productions.push_back(std::move(p));
     }
 
-    // 6) 构建 lhs -> 产生式索引，供后续 Closure 快速访问。
+    for (const auto& kv : def_result.symbol_type_tag_by_name) {
+        const auto it = grammar.symbol_id_by_name.find(kv.first);
+        if (it != grammar.symbol_id_by_name.end()) {
+            grammar.symbol_type_tag_by_id[it->second] = kv.second;
+        }
+    }
+
+    for (const auto& kv : def_result.precedence_by_symbol_name) {
+        const auto it = grammar.symbol_id_by_name.find(kv.first);
+        if (it == grammar.symbol_id_by_name.end()) {
+            throw ParseError(1, 1, "优先级声明引用未定义终结符: " + kv.first);
+        }
+        if (grammar.symbols[it->second].kind != SymbolKind::Terminal) {
+            throw ParseError(1, 1, "优先级声明只能作用于终结符: " + kv.first);
+        }
+        grammar.precedence_by_symbol_id[it->second] = kv.second;
+    }
+
+    grammar.union_block_raw = def_result.union_block_raw;
+
     for (const auto& prod : grammar.productions) {
         grammar.prod_ids_by_lhs[prod.lhs_symbol_id].push_back(prod.id);
     }
@@ -538,15 +729,13 @@ ParseError::ParseError(int line, int column, const std::string& message)
       line_(line),
       column_(column) {}
 
-// 函数说明：解析 .y 文件并返回完整 Grammar 对象。
 Grammar parse_yacc_file(const std::string& path) {
     const std::string content = read_text_file(path);
     const SectionRanges sections = split_sections(content);
 
-    std::unordered_set<std::string> token_names;
+    DefinitionParseResult def_result;
     std::string start_symbol_name;
-    parse_definitions(
-        sections.definitions, sections.definitions_start_line, token_names, start_symbol_name);
+    parse_definitions(sections.definitions, sections.definitions_start_line, def_result, start_symbol_name);
 
     std::vector<ProductionDraft> drafts;
     std::unordered_set<std::string> lhs_names;
@@ -555,7 +744,7 @@ Grammar parse_yacc_file(const std::string& path) {
     Grammar grammar;
     grammar.source_path = path;
     grammar.user_subroutines_raw = sections.user_subroutines;
-    finalize_grammar(grammar, token_names, lhs_names, drafts, start_symbol_name);
+    finalize_grammar(grammar, def_result, lhs_names, drafts, start_symbol_name);
     return grammar;
 }
 

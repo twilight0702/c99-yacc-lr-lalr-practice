@@ -81,6 +81,28 @@ bool same_action(const ParseActionEntry& a, const ParseActionEntry& b) {
            std::tie(b.type, b.target_state_id, b.reduce_production_id);
 }
 
+bool get_precedence_for_terminal(
+    const Grammar& grammar, int terminal_symbol_id, PrecedenceDecl& out) {
+    const auto it = grammar.precedence_by_symbol_id.find(terminal_symbol_id);
+    if (it == grammar.precedence_by_symbol_id.end()) {
+        return false;
+    }
+    out = it->second;
+    return true;
+}
+
+bool get_precedence_for_production(
+    const Grammar& grammar, int production_id, PrecedenceDecl& out) {
+    if (production_id < 0 || production_id >= static_cast<int>(grammar.productions.size())) {
+        return false;
+    }
+    const int sid = grammar.productions[production_id].precedence_symbol_id;
+    if (sid < 0) {
+        return false;
+    }
+    return get_precedence_for_terminal(grammar, sid, out);
+}
+
 // 函数说明：收集某状态中与冲突符号相关的 LR(1) 项，便于诊断输出。
 std::vector<LR1Item> collect_related_items(
     const LR1State& state, int symbol_id, const Grammar& grammar) {
@@ -138,14 +160,46 @@ void insert_action_entry(const Grammar& grammar, const LR1State& state, int symb
     // 2) reduce/reduce：优先产生式编号更小者（稳定、可复现）
     // 3) accept 与其他冲突：优先 accept（只应在 $ 列出现）
     ParseActionEntry resolved = it->second;
+    bool clear_to_error = false;
     std::string reason = "keep_existing";
     if (it->second.type == ParseActionType::Shift || entry.type == ParseActionType::Shift) {
-        if (it->second.type == ParseActionType::Shift) {
-            resolved = it->second;
+        const ParseActionEntry shift_action =
+            (it->second.type == ParseActionType::Shift) ? it->second : entry;
+        const ParseActionEntry reduce_action =
+            (it->second.type == ParseActionType::Reduce) ? it->second : entry;
+
+        PrecedenceDecl term_prec;
+        PrecedenceDecl prod_prec;
+        const bool has_term_prec = get_precedence_for_terminal(grammar, symbol_id, term_prec);
+        const bool has_prod_prec =
+            (reduce_action.type == ParseActionType::Reduce) &&
+            get_precedence_for_production(grammar, reduce_action.reduce_production_id, prod_prec);
+        if (has_term_prec && has_prod_prec) {
+            if (term_prec.level > prod_prec.level) {
+                resolved = shift_action;
+                reason = "precedence_shift";
+            } else if (term_prec.level < prod_prec.level) {
+                resolved = reduce_action;
+                reason = "precedence_reduce";
+            } else {
+                if (term_prec.assoc == Associativity::Left) {
+                    resolved = reduce_action;
+                    reason = "precedence_left_assoc_reduce";
+                } else if (term_prec.assoc == Associativity::Right) {
+                    resolved = shift_action;
+                    reason = "precedence_right_assoc_shift";
+                } else if (term_prec.assoc == Associativity::Nonassoc) {
+                    clear_to_error = true;
+                    reason = "precedence_nonassoc_error";
+                } else {
+                    resolved = shift_action;
+                    reason = "prefer_shift";
+                }
+            }
         } else {
-            resolved = entry;
+            resolved = shift_action;
+            reason = "prefer_shift";
         }
-        reason = "prefer_shift";
     } else if (it->second.type == ParseActionType::Reduce && entry.type == ParseActionType::Reduce) {
         if (entry.reduce_production_id >= 0 &&
             (it->second.reduce_production_id < 0 ||
@@ -164,7 +218,11 @@ void insert_action_entry(const Grammar& grammar, const LR1State& state, int symb
         reason = "prefer_accept";
     }
 
-    it->second = resolved;
+    if (clear_to_error) {
+        action_row.erase(it);
+    } else {
+        it->second = resolved;
+    }
 
     ParseTableConflictResolutionLog log;
     log.state_id = state.state_id;
@@ -172,7 +230,7 @@ void insert_action_entry(const Grammar& grammar, const LR1State& state, int symb
     log.conflict_type = conflict_type;
     log.existing_action = existing_action;
     log.incoming_action = incoming_action;
-    log.resolved_action = format_parse_action_entry(resolved);
+    log.resolved_action = clear_to_error ? "error" : format_parse_action_entry(resolved);
     log.reason = reason;
     resolution_logs.push_back(std::move(log));
 }

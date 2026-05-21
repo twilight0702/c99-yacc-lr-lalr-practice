@@ -71,7 +71,7 @@ def main() -> int:
         bison_c = tmp / "bison.tab.c"
         bison_h = tmp / "bison.tab.h"
 
-        p1 = run_cmd([args.bin, str(grammar), "--emit-y-tab-h", str(ours_h)], cwd=root)
+        p1 = run_cmd([args.bin, "emit", str(grammar), "--emit-y-tab-h", str(ours_h)], cwd=root)
         if p1.returncode != 0:
             return fail(f"我方导出失败\n{p1.stderr}\n{p1.stdout}")
 

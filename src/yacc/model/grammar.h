@@ -42,6 +42,30 @@ struct ActionBlock {
 };
 
 /*
+ * Associativity — 运算符结合性
+ * None:     未声明
+ * Left:     左结合
+ * Right:    右结合
+ * Nonassoc: 非结合
+ */
+enum class Associativity {
+    None,
+    Left,
+    Right,
+    Nonassoc
+};
+
+/*
+ * PrecedenceDecl — 终结符优先级声明
+ * level: 优先级层级（越大优先级越高）
+ * assoc: 结合性
+ */
+struct PrecedenceDecl {
+    int level = 0;
+    Associativity assoc = Associativity::None;
+};
+
+/*
  * Symbol — 文法符号的完整描述
  * id:                符号在 symbols 向量中的唯一索引
  * name:              符号的显示名称（如 "+"、"expression"、"$"）
@@ -68,6 +92,7 @@ struct Production {
     int lhs_symbol_id = -1;
     std::vector<int> rhs_symbol_ids;
     ActionBlock action;
+    int precedence_symbol_id = -1;  // %prec 指定或默认取最右终结符
     int source_line = 0;
 };
 
@@ -105,6 +130,11 @@ struct Grammar {
 
     std::unordered_map<std::string, int> symbol_id_by_name;
     std::unordered_map<int, std::vector<int>> prod_ids_by_lhs;
+
+    // definitions 扩展信息（为与标准 Yacc 行为对齐）
+    std::string union_block_raw;
+    std::unordered_map<int, std::string> symbol_type_tag_by_id;  // symbol_id -> tag
+    std::unordered_map<int, PrecedenceDecl> precedence_by_symbol_id;  // terminal_id -> precedence
 
     std::string user_subroutines_raw;
 };

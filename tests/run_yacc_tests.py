@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""统一运行 YACC 测试 1/2/2f/3/4/5/6/7。"""
+"""统一运行 YACC 测试 1/2/2f/3/4/5/6/7/8。"""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def run(cmd: list[str], cwd: pathlib.Path) -> int:
 
 def main() -> int:
     """解析参数并按编号顺序调度各子测试脚本。"""
-    parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4/5/6/7")
+    parser = argparse.ArgumentParser(description="运行 YACC 测试 1/2/2f/3/4/5/6/7/8")
     parser.add_argument(
         "--tests",
         default="1,2,3,4",
@@ -96,6 +96,9 @@ def main() -> int:
             cmd = ["python3", "tests/scripts/test7_bison_tab_h_compare.py"]
             if args.strict_bison:
                 cmd.append("--strict")
+        elif test_id == "8":
+            test_name = "测试八（扩展 YACC 特性）"
+            cmd = ["python3", "tests/scripts/test8_extended_yacc_features.py"]
         else:
             log("WARN", f"忽略未知测试编号: {test_id}")
             continue
