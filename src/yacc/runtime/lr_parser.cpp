@@ -13,6 +13,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <functional>
+#include <unistd.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -118,6 +120,31 @@ std::string join_symbol_stack(const Grammar& grammar, const std::vector<int>& sy
         oss << symbol_name_of(grammar, symbol_stack[i]);
     }
     return oss.str();
+}
+
+struct AstNode {
+    int id = -1;
+    std::string type;
+    std::string lexeme;
+    int production_id = -1;
+    int line = 0;
+    int column = 0;
+    std::vector<int> children;
+};
+
+std::string escape_json(const std::string& s) {
+    std::string out;
+    for (char ch : s) {
+        switch (ch) {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out.push_back(ch); break;
+        }
+    }
+    return out;
 }
 
 // 函数说明：确保 token 序列以 EOF 结尾，缺失时自动追加。
@@ -371,7 +398,8 @@ CompiledActionExecutor& get_or_build_compiled_action_executor(const Grammar& gra
         return it->second;
     }
 
-    const fs::path build_dir = fs::path("/tmp") / ("yacc_actions_" + key);
+    const std::string uniq = std::to_string(static_cast<long long>(::getpid()));
+    const fs::path build_dir = fs::path("/tmp") / ("yacc_actions_" + key + "_" + uniq);
     fs::create_directories(build_dir);
     const fs::path cpp_path = build_dir / "actions.cpp";
     const fs::path bin_path = build_dir / "actions_runner";
@@ -401,14 +429,8 @@ CompiledActionExecutor& get_or_build_compiled_action_executor(const Grammar& gra
 
 }  // namespace
 
-// 函数说明：从 tokens 文本文件读取运行时输入序列并完成基本校验。
-std::vector<RuntimeToken> load_runtime_tokens_from_file(
-    const Grammar& grammar, const std::string& token_file_path) {
-    std::ifstream in(token_file_path);
-    if (!in.is_open()) {
-        throw std::runtime_error("无法打开 token 文件: " + token_file_path);
-    }
-
+std::vector<RuntimeToken> load_runtime_tokens_from_stream(
+    const Grammar& grammar, std::istream& in, const std::string& source_name) {
     std::vector<RuntimeToken> tokens;
     std::string line;
     int line_no = 0;
@@ -446,13 +468,13 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
         token.symbol_name = canonical_char_literal_for_token_file(token.symbol_name);
         auto id_it = grammar.symbol_id_by_name.find(token.symbol_name);
         if (id_it == grammar.symbol_id_by_name.end()) {
-            throw std::runtime_error("token 文件第 " + std::to_string(line_no) +
+            throw std::runtime_error(source_name + " 第 " + std::to_string(line_no) +
                                      " 行使用了未知符号: " + token.symbol_name);
         }
         token.symbol_id = id_it->second;
         const SymbolKind kind = grammar.symbols[token.symbol_id].kind;
         if (kind == SymbolKind::Nonterminal) {
-            throw std::runtime_error("token 文件第 " + std::to_string(line_no) +
+            throw std::runtime_error(source_name + " 第 " + std::to_string(line_no) +
                                      " 行使用了非终结符，不能作为输入 token: " + token.symbol_name);
         }
         if (token.lexeme.empty()) {
@@ -472,6 +494,16 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
 
     ensure_eof_token(grammar, tokens);
     return tokens;
+}
+
+// 函数说明：从 tokens 文本文件读取运行时输入序列并完成基本校验。
+std::vector<RuntimeToken> load_runtime_tokens_from_file(
+    const Grammar& grammar, const std::string& token_file_path) {
+    std::ifstream in(token_file_path);
+    if (!in.is_open()) {
+        throw std::runtime_error("无法打开 token 文件: " + token_file_path);
+    }
+    return load_runtime_tokens_from_stream(grammar, in, "token 文件");
 }
 
 // 函数说明：执行 LR 运行时移进/归约循环并生成 trace 与错误信息。
@@ -494,6 +526,32 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
 
     std::vector<int> state_stack;
     std::vector<int> symbol_stack;
+    std::vector<int> ast_stack;
+    std::vector<AstNode> ast_nodes;
+    auto add_ast_leaf = [&](const RuntimeToken& tk) {
+        AstNode n;
+        n.id = static_cast<int>(ast_nodes.size());
+        n.type = tk.symbol_name;
+        n.lexeme = tk.lexeme;
+        n.production_id = -1;
+        n.line = tk.line;
+        n.column = tk.column;
+        ast_nodes.push_back(std::move(n));
+        return static_cast<int>(ast_nodes.size() - 1);
+    };
+    auto add_ast_reduce = [&](const Production& p, int pop_count, const std::vector<int>& child_ids) {
+        AstNode n;
+        n.id = static_cast<int>(ast_nodes.size());
+        n.type = symbol_name_of(grammar, p.lhs_symbol_id);
+        n.production_id = p.id;
+        n.children = child_ids;
+        if (pop_count > 0 && !child_ids.empty()) {
+            n.line = ast_nodes[child_ids.front()].line;
+            n.column = ast_nodes[child_ids.front()].column;
+        }
+        ast_nodes.push_back(std::move(n));
+        return static_cast<int>(ast_nodes.size() - 1);
+    };
     state_stack.push_back(0);
     CompiledActionExecutor* compiled_executor = nullptr;
     FILE* compiled_action_pipe = nullptr;
@@ -583,6 +641,7 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
             }
             symbol_stack.push_back(lookahead.symbol_id);
             state_stack.push_back(action.target_state_id);
+            ast_stack.push_back(add_ast_leaf(lookahead));
             if (execute_semantic_compiled_actions && compiled_action_pipe != nullptr) {
                 const std::string sym = escape_field(lookahead.symbol_name);
                 const std::string lex = escape_field(lookahead.lexeme);
@@ -634,6 +693,14 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
                 state_stack.pop_back();
                 symbol_stack.pop_back();
             }
+            std::vector<int> popped_children;
+            for (int i = 0; i < pop_count; ++i) {
+                if (!ast_stack.empty()) {
+                    popped_children.push_back(ast_stack.back());
+                    ast_stack.pop_back();
+                }
+            }
+            std::reverse(popped_children.begin(), popped_children.end());
             const int goto_from_state = state_stack.back();
             if (goto_from_state < 0 || goto_from_state >= static_cast<int>(step8_result.goto_table.size())) {
                 result.error.has_error = true;
@@ -664,6 +731,7 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
 
             symbol_stack.push_back(production.lhs_symbol_id);
             state_stack.push_back(goto_it->second);
+            ast_stack.push_back(add_ast_reduce(production, pop_count, popped_children));
             row.production_id = production_id;
             result.reduction_production_ids.push_back(production_id);
             if (execute_semantic_compiled_actions && compiled_action_pipe != nullptr) {
@@ -689,6 +757,39 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
 
     result.total_steps = step_no;
     result.consumed_tokens = std::max(0, input_index);
+    if (result.accepted && !ast_stack.empty()) {
+        const int root = ast_stack.back();
+        std::ostringstream js;
+        js << "{\n  \"root\": " << root << ",\n  \"nodes\": [\n";
+        for (std::size_t i = 0; i < ast_nodes.size(); ++i) {
+            const auto& n = ast_nodes[i];
+            js << "    {\"id\":" << n.id << ",\"type\":\"" << escape_json(n.type) << "\",\"lexeme\":\""
+               << escape_json(n.lexeme) << "\",\"production_id\":" << n.production_id << ",\"line\":" << n.line
+               << ",\"column\":" << n.column << ",\"children\":[";
+            for (std::size_t j = 0; j < n.children.size(); ++j) {
+                if (j) js << ",";
+                js << n.children[j];
+            }
+            js << "]}";
+            if (i + 1 != ast_nodes.size()) js << ",";
+            js << "\n";
+        }
+        js << "  ]\n}\n";
+        result.ast_json = js.str();
+
+        std::ostringstream txt;
+        std::function<void(int, int)> dfs = [&](int id, int d) {
+            if (id < 0 || id >= static_cast<int>(ast_nodes.size())) return;
+            const auto& n = ast_nodes[id];
+            txt << std::string(static_cast<std::size_t>(d) * 2, ' ') << n.type;
+            if (n.production_id >= 0) txt << " [p#" << n.production_id << "]";
+            if (!n.lexeme.empty()) txt << " \"" << n.lexeme << "\"";
+            txt << "\n";
+            for (int c : n.children) dfs(c, d + 1);
+        };
+        dfs(root, 0);
+        result.ast_text = txt.str();
+    }
     if (compiled_action_pipe != nullptr) {
         const int child_rc = pclose(compiled_action_pipe);
         compiled_action_pipe = nullptr;

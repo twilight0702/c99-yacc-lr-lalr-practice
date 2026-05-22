@@ -225,6 +225,27 @@ def parse_error_kv(path: Path) -> Dict[str, str]:
     return result
 
 
+def parse_ast_json(path: Path) -> Dict[str, object]:
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return {}
+    try:
+        value = json.loads(text)
+        if isinstance(value, dict):
+            return value
+    except Exception:
+        return {}
+    return {}
+
+
+def read_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
 def parse_state_items(path: Path) -> Dict[str, List[str]]:
     result: Dict[str, List[str]] = {}
     current_state = ""
@@ -692,6 +713,8 @@ def collect_step_payload(paths: Paths, case_id: str, step: int) -> Dict[str, obj
             "lalr_reductions": parse_reductions(raw_dir / "parse_reductions_lalr.txt"),
             "lr1_error": parse_error_kv(raw_dir / "parse_error.txt"),
             "lalr_error": parse_error_kv(raw_dir / "parse_error_lalr.txt"),
+            "lalr_ast_json": parse_ast_json(raw_dir / "ast_lalr.json"),
+            "lalr_ast_text": read_text(raw_dir / "ast_lalr.txt"),
         }
     if step == 10:
         payload["lalr"] = {

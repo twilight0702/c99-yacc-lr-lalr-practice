@@ -153,6 +153,19 @@ export interface StepData {
     }>;
     lr1_error: Record<string, string>;
     lalr_error: Record<string, string>;
+    lalr_ast_json?: {
+      root: number;
+      nodes: Array<{
+        id: number;
+        type: string;
+        lexeme: string;
+        production_id: number;
+        line: number;
+        column: number;
+        children: number[];
+      }>;
+    };
+    lalr_ast_text?: string;
   };
   lalr?: {
     state_map: Array<{

@@ -197,6 +197,54 @@
           </table>
         </div>
       </section>
+
+      <section class="panel">
+        <header class="panel-header">
+          <h3>AST 可视化（LALR）</h3>
+          <div class="toolbar">
+            <button class="btn" :class="{ active: astMode === 'tree' }" type="button" @click="astMode = 'tree'">
+              树视图
+            </button>
+            <button class="btn" :class="{ active: astMode === 'text' }" type="button" @click="astMode = 'text'">
+              文本视图
+            </button>
+          </div>
+        </header>
+        <div class="panel-body">
+          <template v-if="astNodes.length > 0">
+            <div v-if="astMode === 'tree'" class="ast-layout">
+              <div class="ast-tree-wrap">
+                <ul class="ast-tree">
+                  <AstTreeNode
+                    :node-id="astRootId"
+                    :node-map="astNodeMap"
+                    :selected-id="selectedAstNodeId"
+                    @select="onSelectAstNode"
+                  />
+                </ul>
+              </div>
+              <div class="ast-detail">
+                <h4>节点详情</h4>
+                <template v-if="selectedAstNode">
+                  <p><strong>id:</strong> {{ selectedAstNode.id }}</p>
+                  <p><strong>type:</strong> {{ selectedAstNode.type }}</p>
+                  <p><strong>lexeme:</strong> {{ selectedAstNode.lexeme || "-" }}</p>
+                  <p><strong>production_id:</strong> {{ selectedAstNode.production_id }}</p>
+                  <p><strong>line/column:</strong> {{ selectedAstNode.line }}:{{ selectedAstNode.column }}</p>
+                  <p><strong>children:</strong> {{ selectedAstNode.children.join(", ") || "-" }}</p>
+                </template>
+                <template v-else>
+                  <p class="mono-line">请选择左侧节点查看详细信息。</p>
+                </template>
+              </div>
+            </div>
+            <pre v-else class="ast-text">{{ astText || "AST 文本为空" }}</pre>
+          </template>
+          <template v-else>
+            <p class="mono-line">当前数据未包含 AST，请重新导出 Step9 并运行 visualizer 数据转换。</p>
+          </template>
+        </div>
+      </section>
     </template>
   </section>
 </template>
@@ -204,6 +252,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import MetricCard from "../components/MetricCard.vue";
+import AstTreeNode from "../components/AstTreeNode.vue";
 import { useYaccStore } from "../stores/yacc";
 import { downloadJsonFile } from "../utils/data";
 
@@ -219,6 +268,8 @@ const tracePage = ref(1);
 const reductionPage = ref(1);
 const traceMode = ref<"lr1" | "lalr">("lr1");
 const reductionMode = ref<"lr1" | "lalr">("lr1");
+const astMode = ref<"tree" | "text">("tree");
+const selectedAstNodeId = ref<number>(-1);
 
 const runtime = computed(() => data.value?.parse_runtime);
 const inputTokens = computed(() => runtime.value?.input_tokens ?? []);
@@ -230,6 +281,18 @@ const lalrReductions = computed(() => runtime.value?.lalr_reductions ?? []);
 const reductions = computed(() => (reductionMode.value === "lr1" ? lr1Reductions.value : lalrReductions.value));
 const lr1Error = computed(() => runtime.value?.lr1_error ?? {});
 const lalrError = computed(() => runtime.value?.lalr_error ?? {});
+const astJson = computed(() => runtime.value?.lalr_ast_json ?? { root: -1, nodes: [] });
+const astText = computed(() => runtime.value?.lalr_ast_text ?? "");
+const astNodes = computed(() => astJson.value.nodes ?? []);
+const astRootId = computed(() => (typeof astJson.value.root === "number" ? astJson.value.root : -1));
+const astNodeMap = computed(() => {
+  const map = new Map<number, (typeof astNodes.value)[number]>();
+  for (const node of astNodes.value) {
+    map.set(node.id, node);
+  }
+  return map;
+});
+const selectedAstNode = computed(() => astNodeMap.value.get(selectedAstNodeId.value));
 
 const tokenTotalPages = computed(() => Math.max(1, Math.ceil(inputTokens.value.length / tokenPageSize)));
 const traceTotalPages = computed(() => Math.max(1, Math.ceil(traceRows.value.length / tracePageSize)));
@@ -243,6 +306,9 @@ watch([traceRows], () => {
 });
 watch([reductions], () => {
   reductionPage.value = 1;
+});
+watch(astNodes, (nodes) => {
+  selectedAstNodeId.value = nodes.length > 0 ? astRootId.value : -1;
 });
 
 watch(tokenPage, (p) => {
@@ -297,6 +363,10 @@ function exportJson() {
   downloadJsonFile("step9_data.json", data.value);
 }
 
+function onSelectAstNode(nodeId: number) {
+  selectedAstNodeId.value = nodeId;
+}
+
 onMounted(async () => {
   await store.ensureStep(9);
 });
@@ -308,5 +378,60 @@ onMounted(async () => {
   padding: 6px 8px;
   white-space: nowrap;
   font-size: 12px;
+}
+
+.ast-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+}
+
+.ast-tree-wrap {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 10px 10px 14px;
+  background: linear-gradient(180deg, #fcfdff 0%, #f8fbff 100%);
+}
+
+.ast-tree {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+
+.ast-detail {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fcfdff;
+}
+
+.ast-detail h4 {
+  margin: 0 0 8px;
+}
+
+.ast-detail p {
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.ast-text {
+  margin: 0;
+  max-height: 460px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  .ast-layout {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

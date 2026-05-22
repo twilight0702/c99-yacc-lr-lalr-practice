@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <istream>
 #include <string>
 #include <vector>
 
@@ -110,6 +111,8 @@ struct LRParseRunResult {
     std::vector<int> reduction_production_ids;
     std::vector<LRParseTraceRow> trace_rows;
     LRParseErrorInfo error;
+    std::string ast_json;
+    std::string ast_text;
 };
 
 /*
@@ -135,6 +138,15 @@ struct LRParseRunResult {
  */
 std::vector<RuntimeToken> load_runtime_tokens_from_file(
     const Grammar& grammar, const std::string& token_file_path);
+
+/*
+ * load_runtime_tokens_from_stream — 从输入流加载 token 序列
+ *
+ * 与 load_runtime_tokens_from_file 使用同一文本协议，常用于管道/标准输入直连。
+ * source_name 仅用于错误信息展示。
+ */
+std::vector<RuntimeToken> load_runtime_tokens_from_stream(
+    const Grammar& grammar, std::istream& in, const std::string& source_name);
 
 /*
  * run_step9_lr_parse — 运行 LR(1) 总控程序

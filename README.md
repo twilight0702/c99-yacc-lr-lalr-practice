@@ -18,6 +18,9 @@
 - LR(1) -> LALR(1) 合并
 - 基于 token 流的查表解析（LR1/LALR 双轨）
 - 按步骤导出产物供后续阶段与可视化使用
+- 导出独立可编译 parser 源码（`--emit-parser-cpp`）
+- 通过 lexer 输出协议直连 parser（`--from-lexer`）
+- 导出 AST（`--ast-out --ast-format json|txt`）与最小四元式样例（`--ir-out`）
 
 ---
 
@@ -87,6 +90,12 @@ cmake --build build -j
 ./build/src/yacc_parse_tool c99.y \
   --parse-tokens contracts/yacc/tokens/c99_decl_int.tokens \
   --export
+
+# 等价联调入口（lexer 输出文件）：
+./build/src/yacc_parse_tool run c99.y \
+  --from-lexer contracts/yacc/tokens/c99_decl_int.tokens \
+  --ast-out tests/out/ast.json --ast-format json \
+  --ir-out tests/out/quads.txt
 ```
 
 - 第9步动作执行与 bison 一致走“编译后执行”路线：先生成动作 C++ 代码并编译，再在归约时调用对应动作。
@@ -139,6 +148,7 @@ npm run dev
 
 ```bash
 python3 tests/run_yacc_tests.py --tests 1,2,2f,3,4,5,6,7 --strict-bison
+python3 tests/run_yacc_tests.py --tests 9
 ```
 
 常用子集：
@@ -152,6 +162,41 @@ python3 tests/run_yacc_tests.py --tests 5,6
 python3 tests/run_yacc_tests.py --tests 7 --strict-bison
 python3 tests/run_yacc_tests.py --tests 1 --update-golden
 ```
+
+### 4.6 使用上层一键脚本联调（推荐验收路径）
+
+从上层仓库根目录运行：
+
+```bash
+cd /home/twilight/Projects/compile_ex_test
+./run_full_pipeline.sh test_input/sample_pipeline_valid.c
+```
+
+只跑前端可用：
+
+```bash
+./run_full_pipeline.sh --frontend-only test_input/sample_pipeline_valid.c
+```
+
+说明：
+
+- 脚本默认使用本仓库的 `c99.l` 与 `c99.y`，也可通过 `--lex` / `--yacc` 覆盖。
+- 第 7 阶段会调用本仓库构建出的 `build/src/yacc_parse_tool`，并导出：
+  - `parse_trace_lalr.tsv`
+  - `parse_reductions_lalr.txt`
+- 完整流程输出目录位于上层仓库：`output/simple_YYYYMMDD_HHMMSS/`。
+
+---
+
+## 4.7 近期联调修复（2026-05-22）
+
+- 修复前端链接重复定义：
+  - 仅在 `.l` 中缺失定义时生成 `frontend_compat.c`（`yylineno`/`column`）。
+  - 避免 `frontend_compat.c` 被重复加入编译参数。
+- 修复 token 词素乱码：
+  - `token_dump_main.c` 中 `yytext` 声明修正为 `extern char *yytext`。
+- 修复 `simple_test/cal.y` 末行无换行触发 `syntax error`：
+  - 增加 `calclist exp` 归约分支，支持 EOF 直接收束。
 
 ---
 

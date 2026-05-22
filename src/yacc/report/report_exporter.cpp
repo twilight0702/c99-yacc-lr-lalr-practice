@@ -1030,6 +1030,10 @@ void export_step9_report(const Grammar& grammar, const GrammarAnalysis& analysis
     }
     write_text_file(raw_dir / "parse_reductions_lalr.txt", reductions_lalr_text);
 
+    // 4c) raw/ast_lalr.json + raw/ast_lalr.txt
+    write_text_file(raw_dir / "ast_lalr.json", lalr_parse_result.ast_json);
+    write_text_file(raw_dir / "ast_lalr.txt", lalr_parse_result.ast_text);
+
     // 5) raw/parse_error.txt
     std::string error_text;
     if (lr1_parse_result.error.has_error) {

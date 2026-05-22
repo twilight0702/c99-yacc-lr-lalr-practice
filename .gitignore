@@ -9,3 +9,6 @@ tests/scripts/__pycache__
 node_modules/
 /visualizer/public/data/
 /temp/
+/ai_chat_sessions/raw/
+/ai_chat_sessions/_extract
+/presentation/
