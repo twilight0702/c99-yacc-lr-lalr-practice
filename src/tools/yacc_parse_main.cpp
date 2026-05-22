@@ -216,7 +216,7 @@ void print_step8_table_result(const seu::yacc::LR1Step8Result& step8_result,
 
 // 函数说明：输出第9步单次解析运行结果与错误上下文。
 void print_step9_parse_result(const seu::yacc::Grammar& grammar, const seu::yacc::LRParseRunResult& parse_result) {
-    std::cout << "[第9步 LR 总控程序] " << (parse_result.accepted ? "accept" : "not-accept") << '\n';
+    std::cout << "结果: " << (parse_result.accepted ? "accept" : "not-accept") << '\n';
     std::cout << "执行步数: " << parse_result.total_steps << '\n';
     std::cout << "规约次数: " << parse_result.reduction_production_ids.size() << '\n';
     std::cout << "已消费 token 数(含可能自动补的$): " << parse_result.consumed_tokens << '\n';
@@ -532,6 +532,30 @@ void emit_token_cases_include(const seu::yacc::Grammar& grammar, const std::stri
     }
 }
 
+void print_compact_summary(const seu::yacc::LR1Step7Result& lr1_step7_result, const seu::yacc::LR1Step8Result& lr1_step8_result,
+    const seu::yacc::LR1Step10Result& step10_result, bool run_step9, const seu::yacc::LRParseRunResult& lr1_parse_result,
+    const seu::yacc::LRParseRunResult& lalr_parse_result) {
+    std::size_t action_entries = 0;
+    for (const auto& row : lr1_step8_result.action_table) {
+        action_entries += row.size();
+    }
+    std::size_t goto_entries = 0;
+    for (const auto& row : lr1_step8_result.goto_table) {
+        goto_entries += row.size();
+    }
+    std::cout << "[摘要] Step4~Step10 通过\n";
+    std::cout << "状态数: LR(1)=" << lr1_step7_result.states.size() << ", LALR(1)=" << step10_result.lalr_state_count
+              << '\n';
+    std::cout << "分析表: Action=" << action_entries << ", Goto=" << goto_entries << '\n';
+    std::cout << "冲突: LR(1)=" << step10_result.lr1_conflict_count << ", LALR(1)=" << step10_result.lalr_conflict_count
+              << '\n';
+    if (run_step9) {
+        std::cout << "解析: LR1=" << (lr1_parse_result.accepted ? "accept" : "not-accept")
+                  << ", LALR=" << (lalr_parse_result.accepted ? "accept" : "not-accept")
+                  << ", steps=" << lr1_parse_result.total_steps << "/" << lalr_parse_result.total_steps << '\n';
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -561,6 +585,8 @@ int main(int argc, char** argv) {
     bool dump_lalr_reductions_machine = false;
     bool dump_step10_raw_machine = false;
     bool strict_bison_ish = false;
+    bool verbose = false;
+    bool show_progress = true;
     std::string emit_y_tab_h_path;
     std::string emit_token_cases_inc_path;
     std::string export_dir;
@@ -687,6 +713,14 @@ int main(int argc, char** argv) {
             strict_bison_ish = true;
             continue;
         }
+        if (arg == "--verbose") {
+            verbose = true;
+            continue;
+        }
+        if (arg == "--no-progress") {
+            show_progress = false;
+            continue;
+        }
         input_path = arg;
     }
 
@@ -699,6 +733,10 @@ int main(int argc, char** argv) {
         // 3) 执行主流程：解析文法 -> 构建各步结果 -> 可选运行时解析与导出。
         auto stage_start = std::chrono::steady_clock::now();
         auto mark_stage = [&](const std::string& label) {
+            if (!show_progress) {
+                stage_start = std::chrono::steady_clock::now();
+                return;
+            }
             const auto now = std::chrono::steady_clock::now();
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - stage_start).count();
             std::cout << "[进度] " << label << "（耗时 " << ms << " ms）\n";
@@ -852,24 +890,32 @@ int main(int argc, char** argv) {
             mark_stage("Step9 LR1/LALR 运行时解析完成");
         }
 
-        print_preprocess_result(grammar, preprocess_report);
-        print_first_set_result(grammar, first_result, first_validation);
-        print_step6_lr1_result(grammar, lr1_result, lr1_validation);
-        print_step7_lr1_result(grammar, lr1_step7_result, lr1_step7_validation);
-        print_step8_table_result(lr1_step8_result, lr1_step8_validation);
-        print_step10_lalr_result(step10_result, step10_validation);
-        if (run_step9) {
-            std::cout << "[第9步语义动作] 已启用 bison 风格编译后动作执行\n";
-            std::cout << "[第9步 LR(1) 总控程序]\n";
-            print_step9_parse_result(grammar, lr1_parse_result);
-            std::cout << "[第9步 LALR(1) 总控程序]\n";
-            print_step9_parse_result(grammar, lalr_parse_result);
-            print_step9_parse_compare_result(lr1_parse_result, lalr_parse_result);
-            if (dump_lalr_reductions_machine) {
-                print_machine_lalr_reduction_sequence(lalr_parse_result);
+        if (verbose) {
+            print_preprocess_result(grammar, preprocess_report);
+            print_first_set_result(grammar, first_result, first_validation);
+            print_step6_lr1_result(grammar, lr1_result, lr1_validation);
+            print_step7_lr1_result(grammar, lr1_step7_result, lr1_step7_validation);
+            print_step8_table_result(lr1_step8_result, lr1_step8_validation);
+            print_step10_lalr_result(step10_result, step10_validation);
+            if (run_step9) {
+                std::cout << "[第9步语义动作] 已启用 bison 风格编译后动作执行\n";
+                std::cout << "[第9步 LR(1) 总控程序]\n";
+                print_step9_parse_result(grammar, lr1_parse_result);
+                std::cout << "[第9步 LALR(1) 总控程序]\n";
+                print_step9_parse_result(grammar, lalr_parse_result);
+                print_step9_parse_compare_result(lr1_parse_result, lalr_parse_result);
+                if (dump_lalr_reductions_machine) {
+                    print_machine_lalr_reduction_sequence(lalr_parse_result);
+                }
+            } else {
+                std::cout << "[第9步 LR 总控程序] 已跳过（未提供 --parse-tokens）\n";
             }
         } else {
-            std::cout << "[第9步 LR 总控程序] 已跳过（未提供 --parse-tokens）\n";
+            print_compact_summary(
+                lr1_step7_result, lr1_step8_result, step10_result, run_step9, lr1_parse_result, lalr_parse_result);
+            if (run_step9 && dump_lalr_reductions_machine) {
+                print_machine_lalr_reduction_sequence(lalr_parse_result);
+            }
         }
         if (dump_step10_raw_machine) {
             print_machine_step10_raw(grammar, step10_result);
