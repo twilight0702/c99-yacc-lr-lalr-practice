@@ -135,6 +135,13 @@ struct Grammar {
     std::string union_block_raw;
     std::unordered_map<int, std::string> symbol_type_tag_by_id;  // symbol_id -> tag
     std::unordered_map<int, PrecedenceDecl> precedence_by_symbol_id;  // terminal_id -> precedence
+    std::vector<int> declared_token_symbol_ids;  // %token 声明顺序（用于稳定 emit）
+
+    bool locations_enabled = false;
+    int expect_sr_conflicts = -1;
+    int expect_rr_conflicts = -1;
+    std::vector<std::string> parsed_only_directives;
+    std::vector<std::string> unsupported_directives;
 
     std::string user_subroutines_raw;
 };

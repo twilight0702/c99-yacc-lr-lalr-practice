@@ -445,6 +445,23 @@ LR1Step8ValidationReport validate_step8_lr1_parsing_table(const Grammar& grammar
         report.warnings.push_back(
             "检测到分析表冲突，详见 raw/parse_table_conflicts.tsv（课程要求应保留冲突报告）。");
     }
+    int sr_count = 0;
+    int rr_count = 0;
+    for (const auto& c : step8_result.conflicts) {
+        if (c.conflict_type == "shift/reduce" || c.conflict_type == "reduce/shift") {
+            ++sr_count;
+        } else if (c.conflict_type == "reduce/reduce") {
+            ++rr_count;
+        }
+    }
+    if (grammar.expect_sr_conflicts >= 0 && grammar.expect_sr_conflicts != sr_count) {
+        report.errors.push_back("`%expect` 不匹配：expected=" + std::to_string(grammar.expect_sr_conflicts) +
+                                ", actual=" + std::to_string(sr_count));
+    }
+    if (grammar.expect_rr_conflicts >= 0 && grammar.expect_rr_conflicts != rr_count) {
+        report.errors.push_back("`%expect-rr` 不匹配：expected=" + std::to_string(grammar.expect_rr_conflicts) +
+                                ", actual=" + std::to_string(rr_count));
+    }
     if (step8_result.conflict_resolution_logs.size() != step8_result.conflicts.size()) {
         report.errors.push_back("冲突数量与冲突消解日志数量不一致。");
     }

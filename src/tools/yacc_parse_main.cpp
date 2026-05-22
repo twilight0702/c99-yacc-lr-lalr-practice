@@ -369,131 +369,56 @@ void print_machine_step10_raw(const seu::yacc::Grammar& grammar, const seu::yacc
     std::cout << "__YACC_STEP10_RAW_END__\n";
 }
 
-// 函数说明：按文法文件中的定义顺序提取 %token 名称列表。
-std::vector<std::string> collect_declared_token_names_in_definition_order(const seu::yacc::Grammar& grammar) {
-    std::ifstream in(grammar.source_path);
-    if (!in.is_open()) {
-        throw std::runtime_error("无法读取文法文件以提取 %token 顺序: " + grammar.source_path);
+bool is_identifier_token_name(const std::string& name) {
+    if (name.empty()) {
+        return false;
     }
-
-    std::unordered_set<std::string> seen;
-    std::vector<std::string> names;
-    std::string line;
-    bool in_code_block = false;
-    while (std::getline(in, line)) {
-        std::string trimmed = line;
-        const auto begin = trimmed.find_first_not_of(" \t\r\n");
-        if (begin == std::string::npos) {
-            continue;
-        }
-        trimmed = trimmed.substr(begin);
-
-        if (trimmed == "%{") {
-            in_code_block = true;
-            continue;
-        }
-        if (trimmed == "%}") {
-            in_code_block = false;
-            continue;
-        }
-        if (in_code_block) {
-            continue;
-        }
-        if (trimmed == "%%") {
-            break;
-        }
-        if (trimmed.rfind("%token", 0) != 0) {
-            continue;
-        }
-
-        const std::string tail = trimmed.substr(6);
-        std::size_t i = 0;
-        auto skip_spaces = [&]() {
-            while (i < tail.size() && std::isspace(static_cast<unsigned char>(tail[i])) != 0) {
-                ++i;
-            }
-        };
-        auto parse_angle = [&]() {
-            if (i >= tail.size() || tail[i] != '<') {
-                return;
-            }
-            ++i;
-            while (i < tail.size() && tail[i] != '>') {
-                ++i;
-            }
-            if (i < tail.size() && tail[i] == '>') {
-                ++i;
-            }
-        };
-        auto parse_char_literal = [&]() -> std::string {
-            std::string tok;
-            if (i >= tail.size() || tail[i] != '\'') {
-                return tok;
-            }
-            tok.push_back(tail[i++]);
-            bool escaped = false;
-            while (i < tail.size()) {
-                const char ch = tail[i++];
-                tok.push_back(ch);
-                if (escaped) {
-                    escaped = false;
-                } else if (ch == '\\') {
-                    escaped = true;
-                } else if (ch == '\'') {
-                    break;
-                }
-            }
-            return tok;
-        };
-        auto parse_identifier = [&]() -> std::string {
-            std::string tok;
-            if (i >= tail.size()) {
-                return tok;
-            }
-            const char ch = tail[i];
-            const bool is_start =
-                std::isalpha(static_cast<unsigned char>(ch)) != 0 || ch == '_';
-            if (!is_start) {
-                return tok;
-            }
-            tok.push_back(tail[i++]);
-            while (i < tail.size()) {
-                const char cur = tail[i];
-                const bool is_char =
-                    std::isalnum(static_cast<unsigned char>(cur)) != 0 || cur == '_';
-                if (!is_char) {
-                    break;
-                }
-                tok.push_back(tail[i++]);
-            }
-            return tok;
-        };
-
-        while (i < tail.size()) {
-            skip_spaces();
-            if (i >= tail.size()) {
-                break;
-            }
-            if (tail[i] == '<') {
-                parse_angle();
-                continue;
-            }
-            std::string token = parse_char_literal();
-            if (token.empty()) {
-                token = parse_identifier();
-            }
-            if (!token.empty() && seen.insert(token).second) {
-                names.push_back(token);
-                continue;
-            }
-            ++i;
+    if (!(std::isalpha(static_cast<unsigned char>(name[0])) != 0 || name[0] == '_')) {
+        return false;
+    }
+    for (std::size_t i = 1; i < name.size(); ++i) {
+        const char ch = name[i];
+        if (!(std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_')) {
+            return false;
         }
     }
+    return true;
+}
 
-    if (names.empty()) {
-        throw std::runtime_error("未在文法文件中提取到 %token 声明");
+std::vector<int> build_emit_token_symbol_ids(const seu::yacc::Grammar& grammar) {
+    std::vector<int> ids;
+    std::unordered_set<int> seen;
+    for (int sid : grammar.declared_token_symbol_ids) {
+        if (sid < 0 || sid >= static_cast<int>(grammar.symbols.size())) {
+            continue;
+        }
+        if (grammar.symbols[sid].kind != seu::yacc::SymbolKind::Terminal) {
+            continue;
+        }
+        if (!is_identifier_token_name(grammar.symbols[sid].name)) {
+            continue;
+        }
+        if (seen.insert(sid).second) {
+            ids.push_back(sid);
+        }
     }
-    return names;
+    std::vector<int> remaining;
+    for (int sid : grammar.terminal_ids) {
+        if (sid < 0 || sid >= static_cast<int>(grammar.symbols.size())) {
+            continue;
+        }
+        if (!is_identifier_token_name(grammar.symbols[sid].name)) {
+            continue;
+        }
+        if (seen.find(sid) == seen.end()) {
+            remaining.push_back(sid);
+        }
+    }
+    std::sort(remaining.begin(), remaining.end(), [&](int a, int b) {
+        return grammar.symbols[a].name < grammar.symbols[b].name;
+    });
+    ids.insert(ids.end(), remaining.begin(), remaining.end());
+    return ids;
 }
 
 bool extract_union_body(const std::string& union_block_raw, std::string& out_body) {
@@ -523,7 +448,7 @@ bool extract_union_body(const std::string& union_block_raw, std::string& out_bod
 
 // 函数说明：导出与 bison 风格兼容的 y.tab.h 头文件。
 void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& output_path) {
-    const std::vector<std::string> token_names = collect_declared_token_names_in_definition_order(grammar);
+    const std::vector<int> token_ids = build_emit_token_symbol_ids(grammar);
     std::ofstream out(output_path);
     if (!out.is_open()) {
         throw std::runtime_error("无法写入 y.tab.h: " + output_path);
@@ -550,8 +475,8 @@ void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& out
     out << "    YYerror = 256,\n";
     out << "    YYUNDEF = 257";
     int token_value = 258;
-    for (const auto& name : token_names) {
-        out << ",\n    " << name << " = " << token_value++;
+    for (int sid : token_ids) {
+        out << ",\n    " << grammar.symbols[sid].name << " = " << token_value++;
     }
     out << "\n  };\n";
     out << "  typedef enum yytokentype yytoken_kind_t;\n";
@@ -579,6 +504,15 @@ void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& out
     out << "#endif\n";
     out << "\n";
     out << "extern YYSTYPE yylval;\n";
+    if (grammar.locations_enabled) {
+        out << "typedef struct YYLTYPE {\n";
+        out << "  int first_line;\n";
+        out << "  int first_column;\n";
+        out << "  int last_line;\n";
+        out << "  int last_column;\n";
+        out << "} YYLTYPE;\n";
+        out << "extern YYLTYPE yylloc;\n";
+    }
     out << "\n";
     out << "int yyparse (void);\n";
     out << "\n";
@@ -587,12 +521,13 @@ void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& out
 
 // 函数说明：导出 token 到字符串的 switch-case 代码片段。
 void emit_token_cases_include(const seu::yacc::Grammar& grammar, const std::string& output_path) {
-    const std::vector<std::string> token_names = collect_declared_token_names_in_definition_order(grammar);
+    const std::vector<int> token_ids = build_emit_token_symbol_ids(grammar);
     std::ofstream out(output_path);
     if (!out.is_open()) {
         throw std::runtime_error("无法写入 token cases include: " + output_path);
     }
-    for (const auto& name : token_names) {
+    for (int sid : token_ids) {
+        const std::string& name = grammar.symbols[sid].name;
         out << "    case " << name << ": return \"" << name << "\";\n";
     }
 }
@@ -625,6 +560,7 @@ int main(int argc, char** argv) {
     bool export_report = false;
     bool dump_lalr_reductions_machine = false;
     bool dump_step10_raw_machine = false;
+    bool strict_bison_ish = false;
     std::string emit_y_tab_h_path;
     std::string emit_token_cases_inc_path;
     std::string export_dir;
@@ -747,6 +683,10 @@ int main(int argc, char** argv) {
             emit_token_cases_inc_path = argv[++i];
             continue;
         }
+        if (arg == "--strict-bison-ish") {
+            strict_bison_ish = true;
+            continue;
+        }
         input_path = arg;
     }
 
@@ -767,6 +707,19 @@ int main(int argc, char** argv) {
 
         // 3.1 读取并解析 .y 文法。
         seu::yacc::Grammar grammar = seu::yacc::parse_yacc_file(input_path);
+        if (strict_bison_ish && !grammar.parsed_only_directives.empty()) {
+            std::cerr << "strict-bison-ish: 检测到 parsed-only 指令:\n";
+            for (const auto& d : grammar.parsed_only_directives) {
+                std::cerr << "  - " << d << '\n';
+            }
+            return 2;
+        }
+        if (!grammar.unsupported_directives.empty()) {
+            std::cerr << "告警: 检测到未支持 directives（已忽略）:\n";
+            for (const auto& d : grammar.unsupported_directives) {
+                std::cerr << "  - " << d << '\n';
+            }
+        }
         if (!emit_y_tab_h_path.empty()) {
             emit_y_tab_header(grammar, emit_y_tab_h_path);
             std::cout << "[导出] y.tab.h 已写入: " << emit_y_tab_h_path << '\n';
@@ -782,6 +735,15 @@ int main(int argc, char** argv) {
         }
 
         print_summary(grammar);
+        if (grammar.locations_enabled) {
+            std::cout << "definitions: %locations=on\n";
+        }
+        if (grammar.expect_sr_conflicts >= 0) {
+            std::cout << "definitions: %expect=" << grammar.expect_sr_conflicts << '\n';
+        }
+        if (grammar.expect_rr_conflicts >= 0) {
+            std::cout << "definitions: %expect-rr=" << grammar.expect_rr_conflicts << '\n';
+        }
         mark_stage("Step1-3 解析输入完成");
 
         if (run_validate) {

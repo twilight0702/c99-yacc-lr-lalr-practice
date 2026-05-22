@@ -36,9 +36,15 @@ struct ProductionDraft {
 
 struct DefinitionParseResult {
     std::unordered_set<std::string> terminal_names;
+    std::vector<std::string> declared_token_names_in_order;
     std::unordered_map<std::string, std::string> symbol_type_tag_by_name;
     std::unordered_map<std::string, PrecedenceDecl> precedence_by_symbol_name;
     std::string union_block_raw;
+    bool locations_enabled = false;
+    int expect_sr_conflicts = -1;
+    int expect_rr_conflicts = -1;
+    std::vector<std::string> parsed_only_directives;
+    std::vector<std::string> unsupported_directives;
 };
 
 std::string read_text_file(const std::string& path) {
@@ -405,12 +411,44 @@ void parse_definitions(const std::string& definitions, int base_line, Definition
                 const std::string& name = items[pos];
                 if (directive == "%token") {
                     result.terminal_names.insert(name);
+                    result.declared_token_names_in_order.push_back(name);
                 }
                 if (!explicit_type_tag.empty()) {
                     result.symbol_type_tag_by_name[name] = explicit_type_tag;
                 }
             }
             continue;
+        }
+
+        if (normalized.rfind("%expect-rr", 0) == 0) {
+            std::istringstream iss(normalized.substr(10));
+            int n = -1;
+            if (!(iss >> n) || n < 0) {
+                throw ParseError(current_line, 1, "%expect-rr 后需要非负整数");
+            }
+            result.expect_rr_conflicts = n;
+            continue;
+        }
+        if (normalized.rfind("%expect", 0) == 0) {
+            std::istringstream iss(normalized.substr(7));
+            int n = -1;
+            if (!(iss >> n) || n < 0) {
+                throw ParseError(current_line, 1, "%expect 后需要非负整数");
+            }
+            result.expect_sr_conflicts = n;
+            continue;
+        }
+        if (normalized == "%locations") {
+            result.locations_enabled = true;
+            continue;
+        }
+        if (normalized.rfind("%define", 0) == 0 || normalized.rfind("%code", 0) == 0 ||
+            normalized.rfind("%destructor", 0) == 0 || normalized.rfind("%printer", 0) == 0) {
+            result.parsed_only_directives.push_back(normalized);
+            continue;
+        }
+        if (!normalized.empty() && normalized[0] == '%') {
+            result.unsupported_directives.push_back(normalized);
         }
 
         // 其余 definitions 指令保留兼容，不阻断第一版与扩展版输入。
@@ -635,6 +673,7 @@ void append_production_from_buffer(const std::string& lhs_name, const std::vecto
 void parse_rules(const std::string& rules, int base_line, std::vector<ProductionDraft>& drafts,
     std::unordered_set<std::string>& lhs_names) {
     RuleCursor c{rules, 0, 1, 1};
+    int midrule_index = 0;
 
     while (!is_eof(c)) {
         skip_spaces_and_comments(c, base_line);
@@ -681,11 +720,25 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
                 break;
             }
             if (ch == '{') {
-                if (action_buffer.present) {
-                    fail_here(c, "同一候选式中不允许多个动作块", base_line);
+                ActionBlock action;
+                action.present = true;
+                action.raw_code = parse_action_block(c, base_line);
+                RuleCursor look = c;
+                skip_spaces_and_comments(look, base_line);
+                const char next = peek(look);
+                if (next == '|' || next == ';' || next == '\0') {
+                    if (action_buffer.present) {
+                        fail_here(c, "同一候选式末尾不允许多个动作块", base_line);
+                    }
+                    action_buffer = std::move(action);
+                } else {
+                    ++midrule_index;
+                    const std::string synth_name = "__midrule_" + std::to_string(midrule_index);
+                    lhs_names.insert(synth_name);
+                    append_production_from_buffer(synth_name, {}, {}, action, "", rule_line, drafts);
+                    rhs_buffer.push_back(synth_name);
+                    rhs_literal_buffer.push_back(false);
                 }
-                action_buffer.present = true;
-                action_buffer.raw_code = parse_action_block(c, base_line);
                 continue;
             }
             if (ch == '\'') {
@@ -698,7 +751,10 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
                 advance(c);
                 const std::string directive = parse_identifier(c, base_line);
                 if (directive != "prec") {
-                    fail_here(c, "规则段仅支持 %prec 指令", base_line);
+                    if (directive == "empty") {
+                        continue;
+                    }
+                    fail_here(c, "规则段仅支持 %prec/%empty 指令", base_line);
                 }
                 skip_spaces_and_comments(c, base_line);
                 if (is_eof(c)) {
@@ -844,6 +900,26 @@ void finalize_grammar(Grammar& grammar, const DefinitionParseResult& def_result,
     }
 
     grammar.union_block_raw = def_result.union_block_raw;
+    grammar.locations_enabled = def_result.locations_enabled;
+    grammar.expect_sr_conflicts = def_result.expect_sr_conflicts;
+    grammar.expect_rr_conflicts = def_result.expect_rr_conflicts;
+    grammar.parsed_only_directives = def_result.parsed_only_directives;
+    grammar.unsupported_directives = def_result.unsupported_directives;
+
+    std::unordered_set<int> seen_tokens;
+    for (const auto& name : def_result.declared_token_names_in_order) {
+        const auto it = grammar.symbol_id_by_name.find(name);
+        if (it == grammar.symbol_id_by_name.end()) {
+            continue;
+        }
+        const int sid = it->second;
+        if (grammar.symbols[sid].kind != SymbolKind::Terminal) {
+            continue;
+        }
+        if (seen_tokens.insert(sid).second) {
+            grammar.declared_token_symbol_ids.push_back(sid);
+        }
+    }
 
     for (const auto& prod : grammar.productions) {
         grammar.prod_ids_by_lhs[prod.lhs_symbol_id].push_back(prod.id);

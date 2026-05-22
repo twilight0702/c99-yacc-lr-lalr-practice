@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""测试8：扩展 YACC 特性（可选第二个%%、%union/%type、%prec/优先级/结合性）。"""
+"""测试8：扩展 YACC 特性（8a 指令解析，8b %expect 门禁，8c mid-rule action）。"""
 
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ def main() -> int:
         shutil.rmtree(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    # case1: 第二个%%可缺失 + %union/%type 可解析
-    case1_dir = out_root / "case1"
+    # case8a-1: 第二个%%可缺失 + %union/%type 可解析
+    case1_dir = out_root / "case8a_1"
     cp1 = run_cmd([
         str(bin_path),
         "tests/grammars/extended_defs_no_second_percent.y",
@@ -48,8 +48,8 @@ def main() -> int:
     if s1.get("lalr_parse_accepted") != "true":
         raise AssertionError(f"case1 预期 accept=true, 实际={s1.get('lalr_parse_accepted')}")
 
-    # case2: %prec + %nonassoc 生效（NUM < NUM < NUM 应报错）
-    case2_dir = out_root / "case2"
+    # case8a-2: %prec + %nonassoc 生效（NUM < NUM < NUM 应报错）
+    case2_dir = out_root / "case8a_2"
     cp2 = run_cmd([
         str(bin_path),
         "tests/grammars/precedence_nonassoc_prec.y",
@@ -64,7 +64,45 @@ def main() -> int:
     if s2.get("lalr_parse_accepted") != "false":
         raise AssertionError(f"case2 预期 accept=false, 实际={s2.get('lalr_parse_accepted')}")
 
-    print("PASS: 测试8通过")
+    # case8a-3: parsed-only 指令在 strict-bison-ish 下触发失败
+    cp3 = run_cmd([
+        str(bin_path),
+        "emit",
+        "tests/grammars/parsed_only_directives.y",
+        "--strict-bison-ish",
+        "--emit-y-tab-h",
+        str(out_root / "strict.tab.h"),
+    ], root)
+    if cp3.returncode == 0:
+        raise AssertionError("case8a_3 预期 strict-bison-ish 失败，但返回成功")
+
+    # case8b: %expect 门禁（声明 1，实际 2 个 S/R 冲突）应失败
+    cp4 = run_cmd([
+        str(bin_path),
+        "tests/grammars/expect_mismatch.y",
+        "--parse-tokens",
+        "tests/tokens/precedence_nonassoc_should_error.tokens",
+    ], root)
+    if cp4.returncode == 0:
+        raise AssertionError("case8b 预期 %expect 门禁失败，但返回成功")
+
+    # case8c: mid-rule action 可运行
+    case5_dir = out_root / "case8c"
+    cp5 = run_cmd([
+        str(bin_path),
+        "tests/grammars/midrule_action.y",
+        "--parse-tokens",
+        "tests/tokens/midrule_action.tokens",
+        "--export",
+        "--export-dir",
+        str(case5_dir),
+    ], root)
+    assert_ok(cp5, "case8c 执行失败")
+    s5 = parse_kv_file(case5_dir / "summary.txt")
+    if s5.get("lalr_parse_accepted") != "true":
+        raise AssertionError(f"case8c 预期 accept=true, 实际={s5.get('lalr_parse_accepted')}")
+
+    print("PASS: 测试8通过（8a/8b/8c）")
     print(f"  out_root={out_root}")
     return 0
 

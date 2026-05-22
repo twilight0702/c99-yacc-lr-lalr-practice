@@ -152,6 +152,25 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
         if (!(iss >> token.symbol_name)) {
             continue;
         }
+        std::string second;
+        std::string third;
+        std::string fourth;
+        std::string fifth;
+        const bool has2 = static_cast<bool>(iss >> second);
+        const bool has3 = has2 && static_cast<bool>(iss >> third);
+        const bool has4 = has3 && static_cast<bool>(iss >> fourth);
+        const bool has5 = has4 && static_cast<bool>(iss >> fifth);
+
+        // 新协议 v2：token_name lexeme line col [token_id]
+        // 旧协议兼容：token_name [lexeme [line [col]]]
+        if (has4) {
+            token.lexeme = second;
+            token.line = std::stoi(third);
+            token.column = std::stoi(fourth);
+        } else if (has2) {
+            token.lexeme = second;
+        }
+
         token.symbol_name = canonical_char_literal_for_token_file(token.symbol_name);
         auto id_it = grammar.symbol_id_by_name.find(token.symbol_name);
         if (id_it == grammar.symbol_id_by_name.end()) {
@@ -164,21 +183,17 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
             throw std::runtime_error("token 文件第 " + std::to_string(line_no) +
                                      " 行使用了非终结符，不能作为输入 token: " + token.symbol_name);
         }
-        token.lexeme = token.symbol_name;
-        token.line = line_no;
-        token.column = 1;
-
-        std::string lexeme;
-        if (iss >> lexeme) {
-            token.lexeme = lexeme;
+        if (token.lexeme.empty()) {
+            token.lexeme = token.symbol_name;
         }
-        int pos_line = 0;
-        if (iss >> pos_line) {
-            token.line = pos_line;
-            int pos_col = 0;
-            if (iss >> pos_col) {
-                token.column = pos_col;
-            }
+        if (token.line <= 0) {
+            token.line = line_no;
+        }
+        if (token.column <= 0) {
+            token.column = 1;
+        }
+        if (has5) {
+            // 可选 token_id 目前仅保留兼容位，不参与解析逻辑。
         }
         tokens.push_back(std::move(token));
     }
