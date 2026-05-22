@@ -154,6 +154,7 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
  *   包含接受状态、归约序列和 trace 记录的运行结果。
  */
 LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result& step8_result,
-    const std::vector<RuntimeToken>& input_tokens, int max_steps);
+    const std::vector<RuntimeToken>& input_tokens, int max_steps,
+    bool execute_semantic_compiled_actions = false);
 
 }  // namespace seu::yacc

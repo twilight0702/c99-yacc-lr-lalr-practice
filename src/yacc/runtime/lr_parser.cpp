@@ -9,13 +9,18 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace seu::yacc {
 namespace {
+namespace fs = std::filesystem;
 
 // 函数说明：去掉字符串首尾空白字符并返回副本。
 std::string trim_copy(const std::string& text) {
@@ -127,6 +132,273 @@ void ensure_eof_token(const Grammar& grammar, std::vector<RuntimeToken>& tokens)
     tokens.push_back(std::move(eof));
 }
 
+struct CompiledActionExecutor {
+    std::string bin_path;
+};
+
+std::unordered_map<std::string, CompiledActionExecutor> g_compiled_action_cache;
+
+std::string sanitize_id(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char ch : s) {
+        if (std::isalnum(static_cast<unsigned char>(ch)) != 0) {
+            out.push_back(ch);
+        } else {
+            out.push_back('_');
+        }
+    }
+    return out;
+}
+
+std::string escape_field(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 8);
+    for (char ch : s) {
+        switch (ch) {
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            default:
+                out.push_back(ch);
+                break;
+        }
+    }
+    return out;
+}
+
+std::string extract_union_body(const std::string& union_block_raw) {
+    if (union_block_raw.empty()) {
+        return "";
+    }
+    const std::size_t l = union_block_raw.find('{');
+    const std::size_t r = union_block_raw.rfind('}');
+    if (l == std::string::npos || r == std::string::npos || r <= l) {
+        return "";
+    }
+    return union_block_raw.substr(l + 1, r - l - 1);
+}
+
+std::string replace_action_placeholders(const Grammar& grammar, const Production& p, const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size() * 2);
+    const bool has_union = !extract_union_body(grammar.union_block_raw).empty();
+    auto lhs_tag_it = grammar.symbol_type_tag_by_id.find(p.lhs_symbol_id);
+    const std::string lhs_tag = (lhs_tag_it == grammar.symbol_type_tag_by_id.end()) ? "" : lhs_tag_it->second;
+    auto rhs_tag_for_index = [&](int one_based) -> std::string {
+        const int idx = one_based - 1;
+        if (idx < 0 || idx >= static_cast<int>(p.rhs_symbol_ids.size())) {
+            return "";
+        }
+        const int sid = p.rhs_symbol_ids[idx];
+        auto it = grammar.symbol_type_tag_by_id.find(sid);
+        if (it == grammar.symbol_type_tag_by_id.end()) {
+            return "";
+        }
+        return it->second;
+    };
+    bool in_string = false;
+    bool in_char = false;
+    bool escaped = false;
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+        const char ch = raw[i];
+        if (in_string) {
+            out.push_back(ch);
+            if (!escaped && ch == '\\') {
+                escaped = true;
+            } else if (!escaped && ch == '"') {
+                in_string = false;
+            } else {
+                escaped = false;
+            }
+            continue;
+        }
+        if (in_char) {
+            out.push_back(ch);
+            if (!escaped && ch == '\\') {
+                escaped = true;
+            } else if (!escaped && ch == '\'') {
+                in_char = false;
+            } else {
+                escaped = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+            out.push_back(ch);
+            continue;
+        }
+        if (ch == '\'') {
+            in_char = true;
+            out.push_back(ch);
+            continue;
+        }
+        if (raw[i] == '$' && i + 1 < raw.size() && raw[i + 1] == '$') {
+            if (!has_union) {
+                out += "yy_lhs_val";
+            } else {
+                out += lhs_tag.empty() ? "yy_lhs_val" : ("yy_lhs_val." + lhs_tag);
+            }
+            ++i;
+            continue;
+        }
+        if (raw[i] == '@' && i + 1 < raw.size() && raw[i + 1] == '$') {
+            out += "yy_lhs_loc";
+            ++i;
+            continue;
+        }
+        if ((raw[i] == '$' || raw[i] == '@') && i + 1 < raw.size() &&
+            std::isdigit(static_cast<unsigned char>(raw[i + 1])) != 0) {
+            std::size_t j = i + 1;
+            while (j < raw.size() && std::isdigit(static_cast<unsigned char>(raw[j])) != 0) {
+                ++j;
+            }
+            const std::string num = raw.substr(i + 1, j - (i + 1));
+            if (raw[i] == '$') {
+                const int n = std::stoi(num);
+                const std::string tag = rhs_tag_for_index(n);
+                if (!has_union) {
+                    out += "YY_RHS(" + num + ")";
+                } else {
+                    out += tag.empty() ? ("YY_RHS(" + num + ")") : ("YY_RHS(" + num + ")." + tag);
+                }
+            } else {
+                out += "YY_RHS_LOC(" + num + ")";
+            }
+            i = j - 1;
+            continue;
+        }
+        out.push_back(raw[i]);
+    }
+    return out;
+}
+
+std::uint64_t fnv1a64(const std::string& s) {
+    std::uint64_t h = 1469598103934665603ULL;
+    for (unsigned char c : s) {
+        h ^= static_cast<std::uint64_t>(c);
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+std::string build_compiled_action_source(const Grammar& grammar) {
+    std::ostringstream out;
+    out << "#include <cstdio>\n";
+    out << "#include <cstdlib>\n";
+    out << "#include <cstdint>\n";
+    out << "#include <cctype>\n";
+    out << "#include <cstring>\n";
+    out << "#include <iostream>\n";
+    out << "#include <sstream>\n";
+    out << "#include <string>\n";
+    out << "#include <vector>\n\n";
+    out << "typedef struct YYLTYPE { int first_line; int first_column; int last_line; int last_column; } YYLTYPE;\n";
+    const std::string union_body = extract_union_body(grammar.union_block_raw);
+    if (!union_body.empty()) {
+        out << "typedef union YYSTYPE {\n" << union_body << "\n} YYSTYPE;\n";
+        out << "static YYSTYPE default_val(const std::string& lex){ YYSTYPE v{}; char* end=nullptr; double d=std::strtod(lex.c_str(), &end); "
+               "if(end!=nullptr && *end=='\\0'){ std::memcpy(&v, &d, (sizeof(YYSTYPE)<sizeof(double)?sizeof(YYSTYPE):sizeof(double))); } return v; }\n\n";
+    } else {
+        out << "typedef int YYSTYPE;\n";
+        out << "static YYSTYPE default_val(const std::string& lex){ char* end=nullptr; long long v=std::strtoll(lex.c_str(), &end, 10); "
+               "if(end!=nullptr && *end=='\\0') return static_cast<int>(v); return 0; }\n\n";
+    }
+    out << "static std::string unesc(const std::string& s){ std::string o; bool e=false; "
+           "for(char c:s){ if(!e&&c=='\\\\'){e=true;continue;} if(e){ if(c=='n')o.push_back('\\n'); "
+           "else if(c=='t')o.push_back('\\t'); else if(c=='r')o.push_back('\\r'); else o.push_back(c); e=false; continue;} o.push_back(c);} return o; }\n";
+    // Do not inject user subroutines directly here; they may redefine main/yyparse.
+    out << "static int yy_action_execute(int production_id, int rhs_count, std::vector<YYSTYPE>& vstk, std::vector<YYLTYPE>& lstk) {\n";
+    out << "  std::vector<YYSTYPE> yy_rhs_vals; std::vector<YYLTYPE> yy_rhs_locs;\n";
+    out << "  for(int i=rhs_count;i>=1;--i){ yy_rhs_vals.push_back(vstk[vstk.size()-i]); yy_rhs_locs.push_back(lstk[lstk.size()-i]); }\n";
+    out << "  for(int i=0;i<rhs_count;++i){ vstk.pop_back(); lstk.pop_back(); }\n";
+    out << "  YYSTYPE yy_lhs_val{}; YYLTYPE yy_lhs_loc{};\n";
+    out << "  if(rhs_count>0){ yy_lhs_val=yy_rhs_vals[0]; yy_lhs_loc=yy_rhs_locs[0]; yy_lhs_loc.last_line=yy_rhs_locs[rhs_count-1].last_line; yy_lhs_loc.last_column=yy_rhs_locs[rhs_count-1].last_column; }\n";
+    out << "  #define YY_RHS(N) (yy_rhs_vals[(N)-1])\n";
+    out << "  #define YY_RHS_LOC(N) (yy_rhs_locs[(N)-1])\n";
+    out << "  #define YY_NUM(N) (YY_RHS(N))\n";
+    out << "  switch (production_id) {\n";
+    for (const auto& p : grammar.productions) {
+        if (!p.action.present || p.action.raw_code.empty()) {
+            continue;
+        }
+        out << "    case " << p.id << ": {\n";
+        out << replace_action_placeholders(grammar, p, p.action.raw_code) << "\n";
+        out << "      break;\n";
+        out << "    }\n";
+    }
+    out << "    default:\n";
+    out << "      break;\n";
+    out << "  }\n";
+    out << "  vstk.push_back(yy_lhs_val); lstk.push_back(yy_lhs_loc);\n";
+    out << "  return 0;\n";
+    out << "}\n";
+    out << "int main() {\n";
+    out << "  std::vector<YYSTYPE> vstk; std::vector<YYLTYPE> lstk; std::string line;\n";
+    out << "  while (std::getline(std::cin, line)) {\n";
+    out << "    if(line.empty()) continue; std::istringstream iss(line); char op=0; iss>>op;\n";
+    out << "    if(op=='Q') break;\n";
+    out << "    if(op=='S'){ std::string sym,lex; int fl=0,fc=0,ll=0,lc=0; iss>>sym>>lex>>fl>>fc>>ll>>lc; (void)sym; "
+           "YYSTYPE v=default_val(unesc(lex)); YYLTYPE l{fl,fc,ll,lc}; vstk.push_back(v); lstk.push_back(l); continue; }\n";
+    out << "    if(op=='R'){ int pid=0,rhs=0; iss>>pid>>rhs; if(rhs<0||rhs>(int)vstk.size()) continue; "
+           "yy_action_execute(pid,rhs,vstk,lstk); continue; }\n";
+    out << "  }\n";
+    out << "  return 0;\n";
+    out << "}\n";
+    return out.str();
+}
+
+CompiledActionExecutor& get_or_build_compiled_action_executor(const Grammar& grammar) {
+    std::string signature = "gen_v5\n" + grammar.source_path + "\n" + grammar.user_subroutines_raw;
+    for (const auto& p : grammar.productions) {
+        signature += "\n#" + std::to_string(p.id) + ":" + (p.action.present ? "1" : "0") + ":" + p.action.raw_code;
+    }
+    const std::uint64_t sig_hash = fnv1a64(signature);
+    const std::string key = sanitize_id(grammar.source_path) + "_" + std::to_string(sig_hash);
+
+    auto it = g_compiled_action_cache.find(key);
+    if (it != g_compiled_action_cache.end()) {
+        return it->second;
+    }
+
+    const fs::path build_dir = fs::path("/tmp") / ("yacc_actions_" + key);
+    fs::create_directories(build_dir);
+    const fs::path cpp_path = build_dir / "actions.cpp";
+    const fs::path bin_path = build_dir / "actions_runner";
+
+    {
+        std::ofstream out(cpp_path);
+        if (!out.is_open()) {
+            throw std::runtime_error("无法写入动作编译源码: " + cpp_path.string());
+        }
+        out << build_compiled_action_source(grammar);
+    }
+
+    std::ostringstream cmd;
+    cmd << "g++ -std=c++17 -O2 "
+        << cpp_path.string() << " -o " << bin_path.string()
+        << " >/tmp/yacc_action_build_stdout.log 2>/tmp/yacc_action_build_stderr.log";
+    const int rc = std::system(cmd.str().c_str());
+    if (rc != 0) {
+        throw std::runtime_error("编译语义动作失败（与 bison 一致，动作代码必须是可编译 C/C++ 片段）。"
+                                 " 可查看 /tmp/yacc_action_build_stderr.log");
+    }
+    CompiledActionExecutor exec;
+    exec.bin_path = bin_path.string();
+    auto inserted = g_compiled_action_cache.emplace(key, std::move(exec));
+    return inserted.first->second;
+}
+
 }  // namespace
 
 // 函数说明：从 tokens 文本文件读取运行时输入序列并完成基本校验。
@@ -204,7 +476,7 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
 
 // 函数说明：执行 LR 运行时移进/归约循环并生成 trace 与错误信息。
 LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result& step8_result,
-    const std::vector<RuntimeToken>& input_tokens, int max_steps) {
+    const std::vector<RuntimeToken>& input_tokens, int max_steps, bool execute_semantic_compiled_actions) {
     LRParseRunResult result;
     if (step8_result.action_table.empty() || step8_result.goto_table.empty()) {
         result.error.has_error = true;
@@ -223,6 +495,15 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
     std::vector<int> state_stack;
     std::vector<int> symbol_stack;
     state_stack.push_back(0);
+    CompiledActionExecutor* compiled_executor = nullptr;
+    FILE* compiled_action_pipe = nullptr;
+    if (execute_semantic_compiled_actions) {
+        compiled_executor = &get_or_build_compiled_action_executor(grammar);
+        compiled_action_pipe = popen(compiled_executor->bin_path.c_str(), "w");
+        if (compiled_action_pipe == nullptr) {
+            throw std::runtime_error("启动语义动作执行器失败: " + compiled_executor->bin_path);
+        }
+    }
 
     int input_index = 0;
     int step_no = 0;
@@ -302,6 +583,17 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
             }
             symbol_stack.push_back(lookahead.symbol_id);
             state_stack.push_back(action.target_state_id);
+            if (execute_semantic_compiled_actions && compiled_action_pipe != nullptr) {
+                const std::string sym = escape_field(lookahead.symbol_name);
+                const std::string lex = escape_field(lookahead.lexeme);
+                const int fl = lookahead.line;
+                const int fc = lookahead.column;
+                const int ll = lookahead.line;
+                const int lc = std::max(fc, fc + static_cast<int>(lookahead.lexeme.size()) - 1);
+                std::fprintf(compiled_action_pipe, "S %s %s %d %d %d %d\n",
+                    sym.c_str(), lex.c_str(), fl, fc, ll, lc);
+                std::fflush(compiled_action_pipe);
+            }
             ++input_index;
             result.trace_rows.push_back(std::move(row));
             continue;
@@ -374,6 +666,10 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
             state_stack.push_back(goto_it->second);
             row.production_id = production_id;
             result.reduction_production_ids.push_back(production_id);
+            if (execute_semantic_compiled_actions && compiled_action_pipe != nullptr) {
+                std::fprintf(compiled_action_pipe, "R %d %d\n", production_id, pop_count);
+                std::fflush(compiled_action_pipe);
+            }
             result.trace_rows.push_back(std::move(row));
             continue;
         }
@@ -393,6 +689,13 @@ LRParseRunResult run_step9_lr_parse(const Grammar& grammar, const LR1Step8Result
 
     result.total_steps = step_no;
     result.consumed_tokens = std::max(0, input_index);
+    if (compiled_action_pipe != nullptr) {
+        const int child_rc = pclose(compiled_action_pipe);
+        compiled_action_pipe = nullptr;
+        if (child_rc != 0) {
+            throw std::runtime_error("语义动作执行器返回非零退出码: " + std::to_string(child_rc));
+        }
+    }
     return result;
 }
 

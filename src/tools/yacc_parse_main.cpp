@@ -846,9 +846,9 @@ int main(int argc, char** argv) {
         if (run_step9) {
             runtime_tokens = seu::yacc::load_runtime_tokens_from_file(grammar, token_file_path);
             lr1_parse_result =
-                seu::yacc::run_step9_lr_parse(grammar, lr1_step8_result, runtime_tokens, max_parse_steps);
+                seu::yacc::run_step9_lr_parse(grammar, lr1_step8_result, runtime_tokens, max_parse_steps, false);
             lalr_parse_result = seu::yacc::run_step9_lr_parse(
-                grammar, step10_result.lalr_step8_result, runtime_tokens, max_parse_steps);
+                grammar, step10_result.lalr_step8_result, runtime_tokens, max_parse_steps, true);
             mark_stage("Step9 LR1/LALR 运行时解析完成");
         }
 
@@ -859,6 +859,7 @@ int main(int argc, char** argv) {
         print_step8_table_result(lr1_step8_result, lr1_step8_validation);
         print_step10_lalr_result(step10_result, step10_validation);
         if (run_step9) {
+            std::cout << "[第9步语义动作] 已启用 bison 风格编译后动作执行\n";
             std::cout << "[第9步 LR(1) 总控程序]\n";
             print_step9_parse_result(grammar, lr1_parse_result);
             std::cout << "[第9步 LALR(1) 总控程序]\n";
