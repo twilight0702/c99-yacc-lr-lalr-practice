@@ -38,6 +38,59 @@ std::string symbol_name_of(const Grammar& grammar, int symbol_id) {
     return grammar.symbols[symbol_id].name;
 }
 
+int hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (ch - 'a');
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return 10 + (ch - 'A');
+    }
+    return -1;
+}
+
+std::string canonical_char_literal_for_token_file(const std::string& raw) {
+    if (raw.size() < 3 || raw.front() != '\'' || raw.back() != '\'') {
+        return raw;
+    }
+    // token_dumper may serialize non-printable char tokens as '\xHH'
+    if (raw.size() == 6 && raw[1] == '\\' && raw[2] == 'x') {
+        const int hi = hex_value(raw[3]);
+        const int lo = hex_value(raw[4]);
+        if (hi >= 0 && lo >= 0) {
+            const unsigned char code = static_cast<unsigned char>((hi << 4) | lo);
+            switch (code) {
+                case '\n':
+                    return "'\\n'";
+                case '\t':
+                    return "'\\t'";
+                case '\r':
+                    return "'\\r'";
+                case '\v':
+                    return "'\\v'";
+                case '\f':
+                    return "'\\f'";
+                case '\b':
+                    return "'\\b'";
+                case '\a':
+                    return "'\\a'";
+                case '\\':
+                    return "'\\\\'";
+                case '\'':
+                    return "'\\''";
+                default:
+                    break;
+            }
+            if (std::isprint(code) != 0) {
+                return std::string("'") + static_cast<char>(code) + "'";
+            }
+        }
+    }
+    return raw;
+}
+
 // 函数说明：将状态栈序列格式化为可打印字符串。
 std::string join_state_stack(const std::vector<int>& state_stack) {
     std::ostringstream oss;
@@ -99,6 +152,7 @@ std::vector<RuntimeToken> load_runtime_tokens_from_file(
         if (!(iss >> token.symbol_name)) {
             continue;
         }
+        token.symbol_name = canonical_char_literal_for_token_file(token.symbol_name);
         auto id_it = grammar.symbol_id_by_name.find(token.symbol_name);
         if (id_it == grammar.symbol_id_by_name.end()) {
             throw std::runtime_error("token 文件第 " + std::to_string(line_no) +

@@ -73,6 +73,68 @@ std::string trim(const std::string& s) {
     return s.substr(begin, end - begin);
 }
 
+std::string strip_comments_for_directives(const std::string& line) {
+    std::string out;
+    bool in_string = false;
+    bool in_char = false;
+    bool escaped = false;
+
+    for (size_t i = 0; i < line.size(); ++i) {
+        const char ch = line[i];
+        const char next = (i + 1 < line.size()) ? line[i + 1] : '\0';
+
+        if (in_string) {
+            out.push_back(ch);
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (in_char) {
+            out.push_back(ch);
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '\'') {
+                in_char = false;
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+            out.push_back(ch);
+            continue;
+        }
+        if (ch == '\'') {
+            in_char = true;
+            out.push_back(ch);
+            continue;
+        }
+        if (ch == '/' && next == '/') {
+            break;
+        }
+        if (ch == '/' && next == '*') {
+            i += 2;
+            while (i < line.size()) {
+                if (line[i] == '*' && i + 1 < line.size() && line[i + 1] == '/') {
+                    ++i;
+                    break;
+                }
+                ++i;
+            }
+            continue;
+        }
+        out.push_back(ch);
+    }
+    return out;
+}
+
 std::vector<std::string> split_lines_keep_newline(const std::string& text) {
     std::vector<std::string> lines;
     std::string current;
@@ -245,7 +307,7 @@ void parse_definitions(const std::string& definitions, int base_line, Definition
         if (!line.empty() && line.back() == '\n') {
             line.pop_back();
         }
-        const std::string normalized = trim(line);
+        const std::string normalized = trim(strip_comments_for_directives(line));
 
         if (normalized.empty()) {
             continue;
@@ -394,6 +456,45 @@ void skip_spaces(RuleCursor& c) {
     }
 }
 
+void skip_spaces_and_comments(RuleCursor& c, int base_line) {
+    while (!is_eof(c)) {
+        const char ch = peek(c);
+        if (std::isspace(static_cast<unsigned char>(ch)) != 0) {
+            advance(c);
+            continue;
+        }
+        if (ch == '/' && c.pos + 1 < c.text.size()) {
+            const char next = c.text[c.pos + 1];
+            if (next == '/') {
+                advance(c);
+                advance(c);
+                while (!is_eof(c) && peek(c) != '\n') {
+                    advance(c);
+                }
+                continue;
+            }
+            if (next == '*') {
+                advance(c);
+                advance(c);
+                bool closed = false;
+                while (!is_eof(c)) {
+                    const char cur = advance(c);
+                    if (cur == '*' && !is_eof(c) && peek(c) == '/') {
+                        advance(c);
+                        closed = true;
+                        break;
+                    }
+                }
+                if (!closed) {
+                    throw ParseError(base_line + c.line - 1, c.column, "块注释未闭合");
+                }
+                continue;
+            }
+        }
+        break;
+    }
+}
+
 [[noreturn]] void fail_here(const RuleCursor& c, const std::string& message, int base_line) {
     throw ParseError(base_line + c.line - 1, c.column, message);
 }
@@ -444,11 +545,26 @@ std::string parse_action_block(RuleCursor& c, int base_line) {
     bool in_string = false;
     bool in_char = false;
     bool escaped = false;
+    bool in_line_comment = false;
+    bool in_block_comment = false;
 
     while (!is_eof(c)) {
         const char ch = advance(c);
         raw.push_back(ch);
 
+        if (in_line_comment) {
+            if (ch == '\n') {
+                in_line_comment = false;
+            }
+            continue;
+        }
+        if (in_block_comment) {
+            if (ch == '*' && !is_eof(c) && peek(c) == '/') {
+                raw.push_back(advance(c));
+                in_block_comment = false;
+            }
+            continue;
+        }
         if (in_string) {
             if (escaped) {
                 escaped = false;
@@ -476,6 +592,16 @@ std::string parse_action_block(RuleCursor& c, int base_line) {
         }
         if (ch == '\'') {
             in_char = true;
+            continue;
+        }
+        if (ch == '/' && !is_eof(c) && peek(c) == '/') {
+            raw.push_back(advance(c));
+            in_line_comment = true;
+            continue;
+        }
+        if (ch == '/' && !is_eof(c) && peek(c) == '*') {
+            raw.push_back(advance(c));
+            in_block_comment = true;
             continue;
         }
         if (ch == '{') {
@@ -511,7 +637,7 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
     RuleCursor c{rules, 0, 1, 1};
 
     while (!is_eof(c)) {
-        skip_spaces(c);
+        skip_spaces_and_comments(c, base_line);
         if (is_eof(c)) {
             break;
         }
@@ -520,7 +646,7 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
         const std::string lhs_name = parse_identifier(c, base_line);
         lhs_names.insert(lhs_name);
 
-        skip_spaces(c);
+        skip_spaces_and_comments(c, base_line);
         if (peek(c) != ':') {
             fail_here(c, "产生式左部后缺少 `:`", base_line);
         }
@@ -532,7 +658,7 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
         std::string precedence_override_symbol_name;
 
         while (!is_eof(c)) {
-            skip_spaces(c);
+            skip_spaces_and_comments(c, base_line);
             if (is_eof(c)) {
                 fail_here(c, "规则未正常结束，缺少 `;`", base_line);
             }
@@ -574,7 +700,7 @@ void parse_rules(const std::string& rules, int base_line, std::vector<Production
                 if (directive != "prec") {
                     fail_here(c, "规则段仅支持 %prec 指令", base_line);
                 }
-                skip_spaces(c);
+                skip_spaces_and_comments(c, base_line);
                 if (is_eof(c)) {
                     fail_here(c, "%prec 后缺少符号", base_line);
                 }
@@ -617,7 +743,7 @@ int compute_default_precedence_symbol_id(const Grammar& grammar, const Productio
 
 void finalize_grammar(Grammar& grammar, const DefinitionParseResult& def_result,
     const std::unordered_set<std::string>& lhs_names, const std::vector<ProductionDraft>& drafts,
-    const std::string& start_symbol_name) {
+    const std::string& start_symbol_name_raw) {
     for (const auto& terminal : def_result.terminal_names) {
         const bool is_literal = terminal.size() >= 2 && terminal.front() == '\'' && terminal.back() == '\'';
         register_symbol_if_absent(grammar, terminal, SymbolKind::Terminal, is_literal);
@@ -634,8 +760,12 @@ void finalize_grammar(Grammar& grammar, const DefinitionParseResult& def_result,
     grammar.epsilon_symbol_id = grammar.symbol_id_by_name.at(kEpsilonSymbolName);
     grammar.augmented_start_symbol_id = grammar.symbol_id_by_name.at(kAugmentedStartName);
 
+    std::string start_symbol_name = start_symbol_name_raw;
     if (start_symbol_name.empty()) {
-        throw ParseError(1, 1, "缺少 %start 声明");
+        if (drafts.empty()) {
+            throw ParseError(1, 1, "缺少规则，无法推断开始符号");
+        }
+        start_symbol_name = drafts.front().lhs_name;
     }
     auto start_it = grammar.symbol_id_by_name.find(start_symbol_name);
     if (start_it == grammar.symbol_id_by_name.end()) {

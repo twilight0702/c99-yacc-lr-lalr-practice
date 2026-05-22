@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <unordered_set>
@@ -405,12 +406,87 @@ std::vector<std::string> collect_declared_token_names_in_definition_order(const 
             continue;
         }
 
-        std::istringstream iss(trimmed.substr(6));
-        std::string token;
-        while (iss >> token) {
+        const std::string tail = trimmed.substr(6);
+        std::size_t i = 0;
+        auto skip_spaces = [&]() {
+            while (i < tail.size() && std::isspace(static_cast<unsigned char>(tail[i])) != 0) {
+                ++i;
+            }
+        };
+        auto parse_angle = [&]() {
+            if (i >= tail.size() || tail[i] != '<') {
+                return;
+            }
+            ++i;
+            while (i < tail.size() && tail[i] != '>') {
+                ++i;
+            }
+            if (i < tail.size() && tail[i] == '>') {
+                ++i;
+            }
+        };
+        auto parse_char_literal = [&]() -> std::string {
+            std::string tok;
+            if (i >= tail.size() || tail[i] != '\'') {
+                return tok;
+            }
+            tok.push_back(tail[i++]);
+            bool escaped = false;
+            while (i < tail.size()) {
+                const char ch = tail[i++];
+                tok.push_back(ch);
+                if (escaped) {
+                    escaped = false;
+                } else if (ch == '\\') {
+                    escaped = true;
+                } else if (ch == '\'') {
+                    break;
+                }
+            }
+            return tok;
+        };
+        auto parse_identifier = [&]() -> std::string {
+            std::string tok;
+            if (i >= tail.size()) {
+                return tok;
+            }
+            const char ch = tail[i];
+            const bool is_start =
+                std::isalpha(static_cast<unsigned char>(ch)) != 0 || ch == '_';
+            if (!is_start) {
+                return tok;
+            }
+            tok.push_back(tail[i++]);
+            while (i < tail.size()) {
+                const char cur = tail[i];
+                const bool is_char =
+                    std::isalnum(static_cast<unsigned char>(cur)) != 0 || cur == '_';
+                if (!is_char) {
+                    break;
+                }
+                tok.push_back(tail[i++]);
+            }
+            return tok;
+        };
+
+        while (i < tail.size()) {
+            skip_spaces();
+            if (i >= tail.size()) {
+                break;
+            }
+            if (tail[i] == '<') {
+                parse_angle();
+                continue;
+            }
+            std::string token = parse_char_literal();
+            if (token.empty()) {
+                token = parse_identifier();
+            }
             if (!token.empty() && seen.insert(token).second) {
                 names.push_back(token);
+                continue;
             }
+            ++i;
         }
     }
 
@@ -418,6 +494,31 @@ std::vector<std::string> collect_declared_token_names_in_definition_order(const 
         throw std::runtime_error("未在文法文件中提取到 %token 声明");
     }
     return names;
+}
+
+bool extract_union_body(const std::string& union_block_raw, std::string& out_body) {
+    const std::size_t start = union_block_raw.find('{');
+    if (start == std::string::npos) {
+        return false;
+    }
+    int depth = 0;
+    bool opened = false;
+    for (std::size_t i = start; i < union_block_raw.size(); ++i) {
+        const char ch = union_block_raw[i];
+        if (ch == '{') {
+            ++depth;
+            opened = true;
+            continue;
+        }
+        if (ch == '}') {
+            --depth;
+            if (opened && depth == 0) {
+                out_body = union_block_raw.substr(start + 1, i - (start + 1));
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // 函数说明：导出与 bison 风格兼容的 y.tab.h 头文件。
@@ -458,7 +559,21 @@ void emit_y_tab_header(const seu::yacc::Grammar& grammar, const std::string& out
     out << "\n";
     out << "/* Value type.  */\n";
     out << "#if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED\n";
-    out << "typedef int YYSTYPE;\n";
+    if (!grammar.union_block_raw.empty()) {
+        std::string union_body;
+        if (extract_union_body(grammar.union_block_raw, union_body)) {
+            out << "typedef union YYSTYPE {\n";
+            out << union_body;
+            if (!union_body.empty() && union_body.back() != '\n') {
+                out << '\n';
+            }
+            out << "} YYSTYPE;\n";
+        } else {
+            out << "typedef int YYSTYPE;\n";
+        }
+    } else {
+        out << "typedef int YYSTYPE;\n";
+    }
     out << "# define YYSTYPE_IS_TRIVIAL 1\n";
     out << "# define YYSTYPE_IS_DECLARED 1\n";
     out << "#endif\n";
