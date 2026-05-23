@@ -69,7 +69,43 @@ cmake -S . -B build
 cmake --build build -j
 ```
 
-### 4.2 运行到 Step10（不喂 token，仅构造与导出）
+### 4.2 仅使用 `emit` 导出源码（单独说明）
+
+`emit` 子命令用于把当前 `.y` 文法直接导出为可集成源码文件，不运行 Step9 token 解析。
+
+基本形式：
+
+```bash
+./build/src/yacc_parse_tool emit <input.y> [导出选项]
+```
+
+可用导出选项（至少给一个）：
+
+- `--emit-parser-cpp <path>`：导出独立可编译语法分析器源码（包含 LALR 表驱动逻辑）
+- `--emit-y-tab-h <path>`：导出 bison 风格 `y.tab.h`
+- `--emit-token-cases-inc <path>`：导出 token 名称映射 `switch-case` 片段
+
+常用示例：
+
+```bash
+# 只导出 parser.cpp
+./build/src/yacc_parse_tool emit c99.y \
+  --emit-parser-cpp tests/out/parser_generated.cpp
+
+# 同时导出三类文件
+./build/src/yacc_parse_tool emit c99.y \
+  --emit-parser-cpp tests/out/parser_generated.cpp \
+  --emit-y-tab-h tests/out/y.tab.h \
+  --emit-token-cases-inc tests/out/token_cases.inc
+```
+
+注意事项：
+
+- `emit` 模式下不支持 `--parse-tokens`、`--from-lexer`、`--export` 等 `run` 模式参数。
+- 产物路径没有内置默认值，文件会写到你传入的 `<path>`。
+- 若只写 `emit` 但未提供任何 `--emit-*` 参数，程序会直接报错退出。
+
+### 4.3 运行到 Step10（不喂 token，仅构造与导出）
 
 ```bash
 ./build/src/yacc_parse_tool c99.y --export
@@ -79,7 +115,7 @@ cmake --build build -j
 
 - `artifacts/yacc/step10/c99/`
 
-### 4.3 运行 Step9（喂 token，执行解析）
+### 4.4 运行 Step9（喂 token，执行解析）
 
 默认行为（当前版本）：
 
@@ -120,7 +156,7 @@ cmake --build build -j
   --export --export-dir artifacts/yacc/step9/custom_case
 ```
 
-### 4.4 生成可视化数据并启动前端
+### 4.5 生成可视化数据并启动前端
 
 先把 `artifacts` 转换为前端 JSON 协议：
 
@@ -140,7 +176,7 @@ npm run dev
 
 - `http://localhost:5174/?case=c99`
 
-### 4.5 运行测试
+### 4.6 运行测试
 
 > 测试运行时长较久，需要有一定耐心（）
 
@@ -163,7 +199,7 @@ python3 tests/run_yacc_tests.py --tests 7 --strict-bison
 python3 tests/run_yacc_tests.py --tests 1 --update-golden
 ```
 
-### 4.6 使用上层一键脚本联调（推荐验收路径）
+### 4.7 使用上层一键脚本联调（推荐验收路径）
 
 从上层仓库根目录运行：
 
@@ -188,7 +224,7 @@ cd /home/twilight/Projects/compile_ex_test
 
 ---
 
-## 4.7 近期联调修复（2026-05-22）
+## 4.8 近期联调修复（2026-05-22）
 
 - 修复前端链接重复定义：
   - 仅在 `.l` 中缺失定义时生成 `frontend_compat.c`（`yylineno`/`column`）。

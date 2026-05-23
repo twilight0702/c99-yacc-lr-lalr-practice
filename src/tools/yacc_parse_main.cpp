@@ -539,47 +539,103 @@ void emit_standalone_parser_cpp(const seu::yacc::Grammar& grammar, const seu::ya
     if (!out.is_open()) {
         throw std::runtime_error("无法写入 parser cpp: " + output_path);
     }
-    out << "#include <fstream>\n#include <iostream>\n#include <sstream>\n#include <string>\n#include <unordered_map>\n#include <vector>\n\n";
-    out << "struct Tok{int id;};\n";
-    out << "int main(int argc,char** argv){ if(argc<2){std::cerr<<\"usage: "<< "parser_generated <tokens_file>\\n\"; return 2;} \n";
-    out << "std::unordered_map<std::string,int> sid = {\n";
-    for (std::size_t i = 0; i < grammar.symbols.size(); ++i) {
-        out << "{\"" << grammar.symbols[i].name << "\"," << grammar.symbols[i].id << "}";
-        if (i + 1 != grammar.symbols.size()) out << ",";
-        out << "\n";
+    out << "#include <cstdio>\n";
+    out << "#include <iostream>\n";
+    out << "#include <vector>\n\n";
+    out << "#include \"y.tab.h\"\n\n";
+    out << "extern \"C\" int yylex(void);\n";
+    out << "YYSTYPE yylval;\n";
+    if (grammar.locations_enabled) {
+        out << "YYLTYPE yylloc;\n";
     }
-    out << "};\n";
-    out << "std::vector<Tok> in; std::ifstream f(argv[1]); std::string ln; while(std::getline(f,ln)){ if(ln.empty()||ln[0]=='#') continue; std::istringstream iss(ln); std::string s; iss>>s; auto it=sid.find(s); if(it==sid.end()){std::cerr<<\"unknown token:\"<<s<<\"\\n\"; return 1;} in.push_back({it->second}); }\n";
-    out << "if(in.empty() || in.back().id!=" << grammar.eof_symbol_id << ") in.push_back({" << grammar.eof_symbol_id << "});\n";
-    out << "std::vector<int> st={0}; int ip=0; int steps=0;\n";
-    out << "while(steps++<200000){ int s=st.back(); if(ip<0||ip>=(int)in.size()) {std::cout<<\"not-accept\\n\"; return 1;} int la=in[ip].id;\n";
-    out << "switch(s){\n";
+    out << "\n";
+    out << "static int token_code_to_symbol_id(int tok) {\n";
+    out << "    if (tok == 0) return " << grammar.eof_symbol_id << ";\n";
+    out << "    switch (tok) {\n";
+    for (int sid : build_emit_token_symbol_ids(grammar)) {
+        out << "    case " << grammar.symbols[sid].name << ": return " << sid << ";\n";
+    }
+    out << "    default: break;\n";
+    out << "    }\n";
+    out << "    switch (tok) {\n";
+    for (int sid : grammar.terminal_ids) {
+        if (sid < 0 || sid >= static_cast<int>(grammar.symbols.size())) {
+            continue;
+        }
+        const std::string& name = grammar.symbols[sid].name;
+        if (name.size() >= 3 && name.front() == '\'' && name.back() == '\'') {
+            std::string ch_expr = name.substr(1, name.size() - 2);
+            if (ch_expr == "\\\\") {
+                ch_expr = "\\\\\\\\";
+            } else if (ch_expr == "\\'") {
+                ch_expr = "\\\\'";
+            }
+            out << "    case '" << ch_expr << "': return " << sid << ";\n";
+        }
+    }
+    out << "    default: break;\n";
+    out << "    }\n";
+    out << "    return -1;\n";
+    out << "}\n\n";
+    out << "int yyparse(void) {\n";
+    out << "    std::vector<int> state_stack{0};\n";
+    out << "    std::vector<int> symbol_stack;\n";
+    out << "    int lookahead_tok = -2;\n";
+    out << "    int lookahead_sid = -2;\n";
+    out << "    int steps = 0;\n";
+    out << "    auto ensure_lookahead = [&]() {\n";
+    out << "        if (lookahead_tok == -2) {\n";
+    out << "            lookahead_tok = yylex();\n";
+    out << "            lookahead_sid = token_code_to_symbol_id(lookahead_tok);\n";
+    out << "        }\n";
+    out << "    };\n";
+    out << "    while (steps++ < 200000) {\n";
+    out << "        ensure_lookahead();\n";
+    out << "        if (lookahead_sid < 0) {\n";
+    out << "            std::cerr << \"parse error: unknown token code \" << lookahead_tok << \"\\n\";\n";
+    out << "            return 1;\n";
+    out << "        }\n";
+    out << "        const int s = state_stack.back();\n";
+    out << "        const int la = lookahead_sid;\n";
+    out << "        switch (s) {\n";
     for (std::size_t s = 0; s < step8_result.action_table.size(); ++s) {
-        out << "case " << s << ": {\n";
-        out << "switch(la){\n";
+        out << "        case " << s << ": {\n";
+        out << "            switch (la) {\n";
         for (const auto& kv : step8_result.action_table[s]) {
             const auto& a = kv.second;
-            out << "case " << kv.first << ": ";
+            out << "            case " << kv.first << ": ";
             if (a.type == seu::yacc::ParseActionType::Shift) {
-                out << "st.push_back(" << a.target_state_id << "); ip++; break;\n";
+                out << "symbol_stack.push_back(la); state_stack.push_back(" << a.target_state_id
+                    << "); lookahead_tok=-2; lookahead_sid=-2; break;\n";
             } else if (a.type == seu::yacc::ParseActionType::Reduce) {
                 const auto& p = grammar.productions[a.reduce_production_id];
-                out << "{ for(int i=0;i<" << p.rhs_symbol_ids.size() << ";++i) st.pop_back(); int gs=st.back(); switch(gs){\n";
+                out << "{ const int pop_n=" << p.rhs_symbol_ids.size() << "; "
+                    << "for(int i=0;i<pop_n;++i){ if(!state_stack.empty()) state_stack.pop_back(); "
+                    << "if(!symbol_stack.empty()) symbol_stack.pop_back(); } "
+                    << "const int gs=state_stack.back(); switch(gs){\n";
                 for (std::size_t gs = 0; gs < step8_result.goto_table.size(); ++gs) {
                     auto git = step8_result.goto_table[gs].find(p.lhs_symbol_id);
                     if (git != step8_result.goto_table[gs].end()) {
-                        out << "case " << gs << ": st.push_back(" << git->second << "); break;\n";
+                        out << "                case " << gs << ": state_stack.push_back(" << git->second
+                            << "); symbol_stack.push_back(" << p.lhs_symbol_id << "); break;\n";
                     }
                 }
-                out << "default: std::cout<<\"not-accept\\n\"; return 1;} } break;\n";
+                out << "                default: std::cerr<<\"parse error: goto missing\"<<\"\\n\"; return 1;} } break;\n";
             } else {
-                out << "std::cout<<\"accept\\n\"; return 0;\n";
+                out << "return 0;\n";
             }
         }
-        out << "default: std::cout<<\"not-accept\\n\"; return 1; }\n";
-        out << "} break;\n";
+        out << "            default: std::cerr<<\"parse error: unexpected symbol id \"<<la<<\" at state \"<<s<<\"\\n\"; return 1;\n";
+        out << "            }\n";
+        out << "        } break;\n";
     }
-    out << "default: std::cout<<\"not-accept\\n\"; return 1; }} std::cout<<\"not-accept\\n\"; return 1; }\n";
+    out << "        default: std::cerr<<\"parse error: invalid state \"<<s<<\"\\n\"; return 1;\n";
+    out << "        }\n";
+    out << "    }\n";
+    out << "    std::cerr << \"parse error: step limit exceeded\" << \"\\n\";\n";
+    out << "    return 1;\n";
+    out << "}\n\n";
+    out << "/* main() is intentionally omitted for library-style integration. */\n";
 }
 
 std::string build_minimal_quads_from_ast_json(const std::string& ast_json) {
