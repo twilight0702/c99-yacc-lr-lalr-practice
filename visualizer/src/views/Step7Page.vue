@@ -42,6 +42,36 @@
 
       <section class="panel">
         <header class="panel-header">
+          <h3>当前状态出边（I{{ selectedStateId }}）</h3>
+        </header>
+        <div class="table-wrap transition-table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>from</th>
+                <th>symbol</th>
+                <th>to</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(t, idx) in selectedOutgoingTransitions"
+                :key="`${idx}-${t.from_state}-${t.symbol_id}-${t.to_state}-selected`"
+              >
+                <td>I{{ t.from_state }}</td>
+                <td class="truncate-cell" :title="t.symbol_name">{{ t.symbol_name }}</td>
+                <td>I{{ t.to_state }}</td>
+              </tr>
+              <tr v-if="selectedOutgoingTransitions.length === 0">
+                <td colspan="3" class="mono-line">该状态无出边。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-header">
           <h3>状态转移边</h3>
           <div class="toolbar">
             <button class="btn" type="button" :disabled="transitionPage <= 1" @click="transitionPage -= 1">
@@ -156,6 +186,11 @@ const selectedPredecessors = computed(() => {
   const sid = Number(selectedStateId.value);
   const row = predecessors.value.find((x) => x.state_id === sid);
   return row?.predecessors ?? [];
+});
+
+const selectedOutgoingTransitions = computed(() => {
+  const sid = Number(selectedStateId.value);
+  return transitions.value.filter((x) => x.from_state === sid);
 });
 
 function exportJson() {

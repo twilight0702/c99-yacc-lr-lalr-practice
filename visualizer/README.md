@@ -30,7 +30,14 @@ npm run dev
 浏览器打开：
 
 ```text
-http://localhost:5174/?case=c99
+http://localhost:5174/
+```
+
+默认会读取 `public/data/v1/latest.json` 指向的最新 case。  
+如需查看指定数据，使用：
+
+```text
+http://localhost:5174/?case=<case_id>
 ```
 
 ## 4. 页面能力

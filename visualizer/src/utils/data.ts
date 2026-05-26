@@ -1,23 +1,76 @@
 import type { Manifest, StepData } from "../types";
 
 const DEFAULT_CASE = "c99";
+const DATA_ROOT = "/data/v1";
+let cachedCaseId: string | null = null;
 
-function resolveCaseId(): string {
+function resolveCaseIdFromQuery(): string | null {
   const query = new URLSearchParams(window.location.search);
-  return query.get("case") ?? DEFAULT_CASE;
+  const caseId = query.get("case");
+  return caseId && caseId.trim() ? caseId.trim() : null;
+}
+
+async function resolveLatestCaseId(): Promise<string | null> {
+  try {
+    const res = await fetch(`${DATA_ROOT}/latest.json`, { cache: "no-store" });
+    if (!res.ok) {
+      return null;
+    }
+    const payload = (await res.json()) as { case_id?: unknown };
+    if (typeof payload.case_id === "string" && payload.case_id.trim()) {
+      return payload.case_id.trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function resolveCaseId(): Promise<string> {
+  if (cachedCaseId) {
+    return cachedCaseId;
+  }
+  const fromQuery = resolveCaseIdFromQuery();
+  if (fromQuery) {
+    cachedCaseId = fromQuery;
+    return fromQuery;
+  }
+  const latestCase = await resolveLatestCaseId();
+  cachedCaseId = latestCase ?? DEFAULT_CASE;
+  return cachedCaseId;
 }
 
 export function getCaseId(): string {
-  return resolveCaseId();
+  return cachedCaseId ?? resolveCaseIdFromQuery() ?? DEFAULT_CASE;
+}
+
+function previewBody(body: string): string {
+  return body.replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+async function fetchJson<T>(url: string, label: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-store" });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`${label}失败: HTTP ${res.status} ${res.statusText} (${url})`);
+  }
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `${label}失败: 响应不是 JSON (content-type=${contentType || "unknown"})，可能路径不存在或被重定向到 HTML。响应片段: ${previewBody(text)}`
+    );
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label}失败: JSON 解析错误 (${detail})，响应片段: ${previewBody(text)}`);
+  }
 }
 
 export async function loadManifest(): Promise<Manifest> {
-  const caseId = resolveCaseId();
-  const res = await fetch(`/data/v1/${caseId}/manifest.json`);
-  if (!res.ok) {
-    throw new Error(`加载 manifest 失败: ${res.status}`);
-  }
-  return (await res.json()) as Manifest;
+  const caseId = await resolveCaseId();
+  return await fetchJson<Manifest>(`${DATA_ROOT}/${caseId}/manifest.json`, "加载 manifest ");
 }
 
 export async function loadStepData(manifest: Manifest, step: number): Promise<StepData> {
@@ -27,11 +80,7 @@ export async function loadStepData(manifest: Manifest, step: number): Promise<St
   }
   const caseId = manifest.case_id;
   const dataPath = stepInfo.files.data;
-  const res = await fetch(`/data/v1/${caseId}/${dataPath}`);
-  if (!res.ok) {
-    throw new Error(`加载 step${step} 数据失败: ${res.status}`);
-  }
-  return (await res.json()) as StepData;
+  return await fetchJson<StepData>(`${DATA_ROOT}/${caseId}/${dataPath}`, `加载 step${step} 数据`);
 }
 
 export function downloadTextFile(filename: string, content: string): void {
