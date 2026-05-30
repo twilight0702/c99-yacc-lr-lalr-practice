@@ -3,8 +3,7 @@
     <div v-if="store.error" class="error-box">{{ store.error }}</div>
     <template v-else>
       <section class="metrics-grid" v-if="store.manifest">
-        <MetricCard title="案例" :value="store.manifest.case_id" hint="来自 URL 参数 case" />
-        <MetricCard title="来源语法文件" :value="store.manifest.source || '-'" />
+        <MetricCard title="来源语法文件" :value="(store.manifest.source || '-').split('/').pop()!" />
         <MetricCard title="步骤数" :value="Object.keys(store.manifest.steps).length" />
         <MetricCard title="生成时间" :value="fmtTime(store.manifest.generated_at)" />
       </section>

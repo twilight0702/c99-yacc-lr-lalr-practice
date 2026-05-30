@@ -1,10 +1,9 @@
-import type { Manifest, StepData } from "../types";
+import type { CaseIndex, CaseIndexItem, Manifest, StepData } from "../types";
 
 const DEFAULT_CASE = "c99";
 const DATA_ROOT = "/data/v1";
-let cachedCaseId: string | null = null;
 
-function resolveCaseIdFromQuery(): string | null {
+export function resolveCaseIdFromQuery(): string | null {
   const query = new URLSearchParams(window.location.search);
   const caseId = query.get("case");
   return caseId && caseId.trim() ? caseId.trim() : null;
@@ -24,24 +23,6 @@ async function resolveLatestCaseId(): Promise<string | null> {
     return null;
   }
   return null;
-}
-
-async function resolveCaseId(): Promise<string> {
-  if (cachedCaseId) {
-    return cachedCaseId;
-  }
-  const fromQuery = resolveCaseIdFromQuery();
-  if (fromQuery) {
-    cachedCaseId = fromQuery;
-    return fromQuery;
-  }
-  const latestCase = await resolveLatestCaseId();
-  cachedCaseId = latestCase ?? DEFAULT_CASE;
-  return cachedCaseId;
-}
-
-export function getCaseId(): string {
-  return cachedCaseId ?? resolveCaseIdFromQuery() ?? DEFAULT_CASE;
 }
 
 function previewBody(body: string): string {
@@ -68,8 +49,20 @@ async function fetchJson<T>(url: string, label: string): Promise<T> {
   }
 }
 
-export async function loadManifest(): Promise<Manifest> {
-  const caseId = await resolveCaseId();
+export async function resolveInitialCaseId(): Promise<string> {
+  const fromQuery = resolveCaseIdFromQuery();
+  if (fromQuery) {
+    return fromQuery;
+  }
+  const latestCase = await resolveLatestCaseId();
+  return latestCase ?? DEFAULT_CASE;
+}
+
+export async function loadCaseIndex(): Promise<CaseIndex> {
+  return await fetchJson<CaseIndex>(`${DATA_ROOT}/cases.json`, "加载 case 列表");
+}
+
+export async function loadManifest(caseId: string): Promise<Manifest> {
   return await fetchJson<Manifest>(`${DATA_ROOT}/${caseId}/manifest.json`, "加载 manifest ");
 }
 
@@ -109,4 +102,15 @@ export function downloadTextFile(filename: string, content: string): void {
 
 export function downloadJsonFile(filename: string, payload: unknown): void {
   downloadTextFile(filename, JSON.stringify(payload, null, 2));
+}
+
+export function sortCasesDesc(cases: CaseIndexItem[]): CaseIndexItem[] {
+  return [...cases].sort((a, b) => {
+    const aTime = Date.parse(a.generated_at);
+    const bTime = Date.parse(b.generated_at);
+    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+      return bTime - aTime;
+    }
+    return b.case_id.localeCompare(a.case_id);
+  });
 }

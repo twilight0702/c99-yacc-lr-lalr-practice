@@ -8,7 +8,6 @@
     <div v-else-if="pageError" class="error-box">{{ pageError }}</div>
     <template v-else>
       <section class="metrics-grid">
-        <MetricCard title="当前 Case" :value="caseId" hint="与顶部 URL 参数保持一致" />
         <MetricCard title="Lex 规则文件" :value="lexSpec?.label ?? '-'" :hint="lexSpec?.note" />
         <MetricCard title="C 输入来源" :value="lexInput?.label ?? '-'" :hint="lexInput?.note" />
         <MetricCard title="Lex 行数" :value="countSourceLines(lexSpec?.code ?? '')" />
@@ -23,15 +22,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import MetricCard from "../components/MetricCard.vue";
 import SourceCodePanel from "../components/SourceCodePanel.vue";
 import { useYaccStore } from "../stores/yacc";
-import { getCaseId } from "../utils/data";
 import { countNonEmptyLines, countSourceLines, loadLexArtifacts, type ResolvedArtifact } from "../utils/pipelineArtifacts";
 
 const store = useYaccStore();
-const caseId = getCaseId();
+const caseId = computed(() => store.currentCaseId || store.manifest?.case_id || "-");
 const pageError = ref("");
 const lexSpec = ref<ResolvedArtifact | null>(null);
 const lexInput = ref<ResolvedArtifact | null>(null);

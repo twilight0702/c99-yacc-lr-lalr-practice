@@ -782,6 +782,55 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
     write_json(case_output_root / "manifest.json", manifest)
 
 
+def write_case_indexes(output_root: Path) -> None:
+    cases: List[Dict[str, object]] = []
+    for case_dir in output_root.iterdir():
+        if not case_dir.is_dir():
+            continue
+        manifest_path = case_dir / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        case_id = str(manifest.get("case_id", case_dir.name)).strip() or case_dir.name
+        generated_at = str(manifest.get("generated_at", "")).strip()
+        source = str(manifest.get("source", "")).strip()
+        steps = manifest.get("steps", {})
+        step_count = len(steps) if isinstance(steps, dict) else 0
+        cases.append(
+            {
+                "case_id": case_id,
+                "generated_at": generated_at,
+                "source": source,
+                "step_count": step_count,
+            }
+        )
+
+    cases.sort(key=lambda item: (str(item.get("generated_at", "")), str(item.get("case_id", ""))), reverse=True)
+    latest_case_id = str(cases[0]["case_id"]) if cases else ""
+    now = datetime.now(timezone.utc).isoformat()
+
+    write_json(
+        output_root / "cases.json",
+        {
+            "schema_version": "yacc-visualizer-case-index/v1",
+            "updated_at": now,
+            "latest_case_id": latest_case_id,
+            "cases": cases,
+        },
+    )
+    if latest_case_id:
+        write_json(
+            output_root / "latest.json",
+            {
+                "case_id": latest_case_id,
+                "updated_at": now,
+            },
+        )
+
+
 def discover_cases(artifacts_root: Path, requested_case: str) -> List[str]:
     if requested_case:
         return [requested_case]
@@ -825,6 +874,7 @@ def main() -> None:
     for case_id in cases:
         build_case(paths, case_id, steps)
         print(f"[ok] case={case_id} -> {output_root / case_id}")
+    write_case_indexes(output_root)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,20 @@ export interface ManifestStepInfo {
   files: Record<string, string>;
 }
 
+export interface CaseIndexItem {
+  case_id: string;
+  generated_at: string;
+  source: string;
+  step_count: number;
+}
+
+export interface CaseIndex {
+  schema_version: string;
+  updated_at: string;
+  latest_case_id: string;
+  cases: CaseIndexItem[];
+}
+
 export interface Manifest {
   schema_version: string;
   case_id: string;
