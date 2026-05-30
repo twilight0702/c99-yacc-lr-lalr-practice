@@ -83,6 +83,20 @@ export async function loadStepData(manifest: Manifest, step: number): Promise<St
   return await fetchJson<StepData>(`${DATA_ROOT}/${caseId}/${dataPath}`, `加载 step${step} 数据`);
 }
 
+export async function loadCaseText(caseId: string, filename: string): Promise<string> {
+  const url = `${DATA_ROOT}/${caseId}/${filename}`;
+  const res = await fetch(url, { cache: "no-store" });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`加载 ${filename} 失败: HTTP ${res.status} ${res.statusText} (${url})`);
+  }
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("text/html")) {
+    throw new Error(`加载 ${filename} 失败: 收到 HTML 响应，路径可能不存在 (${url})`);
+  }
+  return text;
+}
+
 export function downloadTextFile(filename: string, content: string): void {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);

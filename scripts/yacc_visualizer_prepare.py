@@ -742,6 +742,11 @@ def build_case(paths: Paths, case_id: str, steps: List[int]) -> None:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source": "",
         "steps": {},
+        "assets": {
+            "lex": "lexer.l",
+            "input": "input.c",
+            "jimple": "output.jimple",
+        },
     }
 
     step_titles = {

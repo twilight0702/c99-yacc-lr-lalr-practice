@@ -62,6 +62,20 @@ body {
   gap: 8px;
 }
 
+.nav-group-title {
+  margin: 10px 8px 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 248, 246, 0.72);
+}
+
+.nav-divider {
+  height: 1px;
+  margin: 6px 8px;
+  background: rgba(226, 248, 246, 0.18);
+}
+
 .nav-item {
   text-decoration: none;
   color: #e2f8f6;
@@ -173,6 +187,12 @@ body {
   font-size: 15px;
 }
 
+.panel-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .panel-body {
   padding: 12px 14px;
 }
@@ -274,6 +294,47 @@ body {
   padding: 8px 12px 12px;
   max-height: 320px;
   overflow: auto;
+}
+
+.source-panel {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.source-empty {
+  padding: 24px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.source-code {
+  padding: 8px 0;
+}
+
+.source-line {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: start;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+}
+
+.source-line:hover {
+  background: #f8fafc;
+}
+
+.source-line-no {
+  padding: 3px 12px 3px 16px;
+  color: #94a3b8;
+  text-align: right;
+  border-right: 1px solid #e2e8f0;
+  user-select: none;
+}
+
+.source-line-text {
+  padding: 3px 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .mono-line {

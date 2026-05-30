@@ -10,6 +10,11 @@ export interface Manifest {
   generated_at: string;
   source: string;
   steps: Record<string, ManifestStepInfo>;
+  assets?: {
+    lex?: string;
+    input?: string;
+    jimple?: string;
+  };
 }
 
 export interface SymbolRow {

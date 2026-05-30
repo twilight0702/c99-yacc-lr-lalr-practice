@@ -4,7 +4,7 @@
     <main class="content">
       <header class="topbar">
         <div>
-          <p class="topbar-title">YACC 全步骤可视化</p>
+          <p class="topbar-title">编译流程可视化</p>
           <p class="topbar-sub">Case: {{ caseId }} · 协议版本: v1</p>
         </div>
       </header>

@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import OverviewPage from "./views/OverviewPage.vue";
+import LexPage from "./views/LexPage.vue";
+import JimplePage from "./views/JimplePage.vue";
 import Step1Page from "./views/Step1Page.vue";
 import Step2Page from "./views/Step2Page.vue";
 import Step3Page from "./views/Step3Page.vue";
@@ -16,6 +18,8 @@ export const router = createRouter({
   routes: [
     { path: "/", redirect: "/overview" },
     { path: "/overview", component: OverviewPage },
+    { path: "/lex", component: LexPage },
+    { path: "/jimple", component: JimplePage },
     { path: "/step1", component: Step1Page },
     { path: "/step2", component: Step2Page },
     { path: "/step3", component: Step3Page },
