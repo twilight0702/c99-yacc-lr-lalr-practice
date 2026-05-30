@@ -208,16 +208,19 @@
             <button class="btn" :class="{ active: astMode === 'text' }" type="button" @click="astMode = 'text'">
               文本视图
             </button>
+            <button class="btn" :class="{ active: simplifyAst }" type="button" @click="simplifyAst = !simplifyAst">
+              简化 AST
+            </button>
           </div>
         </header>
         <div class="panel-body">
-          <template v-if="astNodes.length > 0">
+          <template v-if="astDisplayNodes.length > 0">
             <div v-if="astMode === 'tree'" class="ast-layout">
               <div class="ast-tree-wrap">
                 <ul class="ast-tree">
                   <AstTreeNode
-                    :node-id="astRootId"
-                    :node-map="astNodeMap"
+                    :node-id="astDisplayRootId"
+                    :node-map="astDisplayNodeMap"
                     :selected-id="selectedAstNodeId"
                     @select="onSelectAstNode"
                   />
@@ -269,6 +272,7 @@ const reductionPage = ref(1);
 const traceMode = ref<"lr1" | "lalr">("lr1");
 const reductionMode = ref<"lr1" | "lalr">("lr1");
 const astMode = ref<"tree" | "text">("tree");
+const simplifyAst = ref(true);
 const selectedAstNodeId = ref<number>(-1);
 
 const runtime = computed(() => data.value?.parse_runtime);
@@ -284,7 +288,7 @@ const lalrError = computed(() => runtime.value?.lalr_error ?? {});
 const astJson = computed(() => runtime.value?.lalr_ast_json ?? { root: -1, nodes: [] });
 const astText = computed(() => runtime.value?.lalr_ast_text ?? "");
 const astNodes = computed(() => astJson.value.nodes ?? []);
-const astRootId = computed(() => (typeof astJson.value.root === "number" ? astJson.value.root : -1));
+const astRawRootId = computed(() => (typeof astJson.value.root === "number" ? astJson.value.root : -1));
 const astNodeMap = computed(() => {
   const map = new Map<number, (typeof astNodes.value)[number]>();
   for (const node of astNodes.value) {
@@ -292,7 +296,81 @@ const astNodeMap = computed(() => {
   }
   return map;
 });
-const selectedAstNode = computed(() => astNodeMap.value.get(selectedAstNodeId.value));
+
+type AstViewNode = {
+  id: number;
+  type: string;
+  lexeme: string;
+  production_id: number;
+  line: number;
+  column: number;
+  children: number[];
+};
+
+const astDisplay = computed(() => {
+  if (!simplifyAst.value) {
+    return { root: astRawRootId.value, nodes: astNodes.value as AstViewNode[] };
+  }
+
+  const rawMap = astNodeMap.value as Map<number, AstViewNode>;
+  const collapsedChildMap = new Map<number, number[]>();
+  const visiting = new Set<number>();
+
+  const collapseNode = (nodeId: number): number[] => {
+    if (collapsedChildMap.has(nodeId)) {
+      return collapsedChildMap.get(nodeId) ?? [];
+    }
+    if (visiting.has(nodeId)) {
+      return [nodeId];
+    }
+    visiting.add(nodeId);
+    const node = rawMap.get(nodeId);
+    if (!node) {
+      visiting.delete(nodeId);
+      collapsedChildMap.set(nodeId, []);
+      return [];
+    }
+    const children = Array.isArray(node.children) ? node.children : [];
+    if (children.length === 1) {
+      const only = children[0];
+      const child = rawMap.get(only);
+      if (child && child.production_id >= 0 && !child.lexeme) {
+        const flattened = collapseNode(only);
+        visiting.delete(nodeId);
+        collapsedChildMap.set(nodeId, flattened);
+        return flattened;
+      }
+    }
+    visiting.delete(nodeId);
+    collapsedChildMap.set(nodeId, [nodeId]);
+    return [nodeId];
+  };
+
+  const resultMap = new Map<number, AstViewNode>();
+  for (const node of astNodes.value as AstViewNode[]) {
+    const rawChildren = Array.isArray(node.children) ? node.children : [];
+    const nextChildren: number[] = [];
+    for (const cid of rawChildren) {
+      nextChildren.push(...collapseNode(cid));
+    }
+    resultMap.set(node.id, { ...node, children: nextChildren });
+  }
+
+  const rootCandidates = collapseNode(astRawRootId.value);
+  const root = rootCandidates.length > 0 ? rootCandidates[0] : -1;
+  return { root, nodes: Array.from(resultMap.values()) };
+});
+
+const astDisplayNodes = computed(() => astDisplay.value.nodes ?? []);
+const astDisplayRootId = computed(() => astDisplay.value.root);
+const astDisplayNodeMap = computed(() => {
+  const map = new Map<number, AstViewNode>();
+  for (const node of astDisplayNodes.value) {
+    map.set(node.id, node);
+  }
+  return map;
+});
+const selectedAstNode = computed(() => astDisplayNodeMap.value.get(selectedAstNodeId.value));
 
 const tokenTotalPages = computed(() => Math.max(1, Math.ceil(inputTokens.value.length / tokenPageSize)));
 const traceTotalPages = computed(() => Math.max(1, Math.ceil(traceRows.value.length / tracePageSize)));
@@ -307,8 +385,14 @@ watch([traceRows], () => {
 watch([reductions], () => {
   reductionPage.value = 1;
 });
-watch(astNodes, (nodes) => {
-  selectedAstNodeId.value = nodes.length > 0 ? astRootId.value : -1;
+watch([astDisplayNodes, astDisplayRootId], ([nodes, root]) => {
+  if (nodes.length === 0) {
+    selectedAstNodeId.value = -1;
+    return;
+  }
+  if (!astDisplayNodeMap.value.has(selectedAstNodeId.value)) {
+    selectedAstNodeId.value = root;
+  }
 });
 
 watch(tokenPage, (p) => {

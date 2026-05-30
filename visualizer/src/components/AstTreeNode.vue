@@ -94,6 +94,11 @@ const isLeaf = computed(() => !Array.isArray(node.value.children) || node.value.
   border-color: #b7cbe4;
 }
 
+.ast-node-header:not(.leaf) {
+  background: #eef6ff;
+  border-color: #c8dcf2;
+}
+
 .ast-node-header.selected {
   background: #0f766e;
   color: #fff;
@@ -104,6 +109,13 @@ const isLeaf = computed(() => !Array.isArray(node.value.children) || node.value.
 .ast-node-header.leaf {
   border-style: dashed;
   background: #f9fbff;
+}
+
+.ast-node-header.selected.leaf {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: #1f2937;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
 }
 
 .node-type {
@@ -118,6 +130,10 @@ const isLeaf = computed(() => !Array.isArray(node.value.children) || node.value.
   color: #cffaf3;
 }
 
+.ast-node-header.selected.leaf .node-id {
+  color: #374151;
+}
+
 .node-lexeme {
   color: #1d4ed8;
   background: #e9f0ff;
@@ -130,6 +146,12 @@ const isLeaf = computed(() => !Array.isArray(node.value.children) || node.value.
   color: #fff;
   background: rgba(255, 255, 255, 0.18);
   border-color: rgba(255, 255, 255, 0.35);
+}
+
+.ast-node-header.selected.leaf .node-lexeme {
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(120, 53, 15, 0.22);
 }
 
 .ast-children {
